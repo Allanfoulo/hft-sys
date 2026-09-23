@@ -187,7 +187,7 @@
         button { align-self: stretch; }
         .panel-note { max-width: 45%; }
         .ledger { overflow-x: auto; }
-        table { min-width: 620px; }
+        table { min-width: 980px; }
       }
     </style>
   </head>
@@ -255,7 +255,7 @@
             <div class="panel-note" id="ledger-note">0 simulated rows</div>
           </div>
           <table>
-            <thead><tr><th>Date</th><th>Side</th><th>Result</th><th>P/L</th><th>R</th><th>Tag</th></tr></thead>
+            <thead><tr><th>Date</th><th>Pair</th><th>Side</th><th>Entry UTC</th><th>Entry px</th><th>Exit UTC</th><th>Exit px</th><th>Result</th><th>P/L</th><th>R</th><th>Tag</th></tr></thead>
             <tbody id="ledger-body"></tbody>
           </table>
         </div>
@@ -274,6 +274,7 @@
       const $ = (id) => document.getElementById(id);
       const money = (value) => `$${Number(value || 0).toFixed(2)}`;
       const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+      const formatUtc = (seconds) => seconds == null ? "—" : new Date(Number(seconds) * 1000).toISOString().replace("T", " ").replace(".000Z", "Z");
       let rows = [];
 
       function setStatus(label, kind = "") {
@@ -342,7 +343,12 @@
         $("ledger-body").innerHTML = rows.map((row, index) => `
           <tr data-index="${index}">
             <td>${esc(row.date)}</td>
+            <td>${esc(row.symbol || "—")}</td>
             <td>${esc(String(row.direction || "—").toUpperCase())}</td>
+            <td>${esc(formatUtc(row.entry_ts))}</td>
+            <td>${row.entry_price == null ? "—" : Number(row.entry_price).toFixed(2)}</td>
+            <td>${esc(formatUtc(row.exit_ts))}</td>
+            <td>${row.exit_price == null ? "—" : Number(row.exit_price).toFixed(2)}</td>
             <td class="${row.profit_loss === "Profit" ? "good" : "bad"}">${esc(row.outcome || "—")}</td>
             <td class="${row.profit_loss === "Profit" ? "good" : "bad"}">${esc(row.profit_loss || "—")}</td>
             <td class="${row.profit_loss === "Profit" ? "good" : "bad"}">${row.r_multiple == null ? "—" : `${Number(row.r_multiple) >= 0 ? "+" : ""}${Number(row.r_multiple).toFixed(1)}R`}</td>
@@ -377,7 +383,7 @@
         $("detail-date").textContent = `${row.date} · ${row.execution_model_tag}`;
         const resultWord = String(row.profit_loss || "").toLowerCase();
         const rText = `${Number(row.r_multiple) >= 0 ? "+" : ""}${Number(row.r_multiple).toFixed(1)}R`;
-        $("detail-copy").innerHTML = `This simulated ${esc(resultWord)} case entered at <code>${Number(row.entry_price).toFixed(2)}</code>, protected at <code>${Number(row.stop_price).toFixed(2)}</code>, and targeted <code>${Number(row.target_price).toFixed(2)}</code>. Lifecycle: <code>${esc((row.transitions || []).join(" → "))}</code>. Result: <code>${esc(row.outcome)}</code>, <code>${rText}</code>, ${money(row.pnl_usd)}.`;
+        $("detail-copy").innerHTML = `This simulated ${esc(resultWord)} ${esc(row.symbol || "")} case entered at <code>${esc(formatUtc(row.entry_ts))}</code> for <code>${Number(row.entry_price).toFixed(2)}</code> and exited at <code>${esc(formatUtc(row.exit_ts))}</code> for <code>${Number(row.exit_price).toFixed(2)}</code>. Stop <code>${Number(row.stop_price).toFixed(2)}</code>, target <code>${Number(row.target_price).toFixed(2)}</code>. Lifecycle: <code>${esc((row.transitions || []).join(" → "))}</code>. Result: <code>${esc(row.outcome)}</code>, <code>${rText}</code>, ${money(row.pnl_usd)}.`;
       }
 
       $("run").addEventListener("click", runReplay);

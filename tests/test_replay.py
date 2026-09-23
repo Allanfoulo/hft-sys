@@ -19,6 +19,9 @@ def test_replay_range_returns_tagged_rows_and_summary():
     assert result["summary"]["trades"] == 3
     assert result["summary"]["total_r"] == pytest.approx(9.0)
     assert all(row["execution_model_tag"] == "range-test" for row in result["rows"])
+    assert all(row["symbol"] == "BTC/USD" for row in result["rows"])
+    assert all(row["entry_ts"] < row["exit_ts"] for row in result["rows"])
+    assert all(row["entry_price"] != row["exit_price"] for row in result["rows"])
 
 
 def test_fixture_replay_exercises_profit_and_loss_paths():

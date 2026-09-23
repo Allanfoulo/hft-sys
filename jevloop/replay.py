@@ -13,6 +13,8 @@ from .execution.sweep import (
 from .market_structure import Bar, confirmed_fractals, detect_sweeps
 from .session_strategy import LondonSweepEngine, jev_allows_entry
 
+REPLAY_SYMBOL = "BTC/USD"
+
 
 def _utc_start(day: date, hour: int, minute: int = 0) -> float:
     return datetime(day.year, day.month, day.day, hour, minute, tzinfo=timezone.utc).timestamp()
@@ -105,15 +107,19 @@ def replay_day(day: date, execution_model_tag: str = DEFAULT_EXECUTION_MODEL_TAG
         "ok": True,
         "date": day.isoformat(),
         "session": "08:00-11:00 UTC",
+        "symbol": REPLAY_SYMBOL,
         "execution_model_tag": plan.execution_model_tag,
         "bias": engine.snapshot.bias,
         "setup_id": setup.setup_id,
         "signal_ts": signal.timestamp,
+        "entry_ts": signal.timestamp,
         "direction": plan.direction,
         "quantity": plan.quantity,
         "entry_price": plan.entry_price,
         "stop_price": plan.stop_price,
         "target_price": plan.target_price,
+        "exit_ts": transitions[-1].timestamp,
+        "exit_price": transitions[-1].state.exit_price,
         "max_loss_usd": plan.max_loss_usd,
         "outcome": transitions[-1].event,
         "profit_loss": "Loss" if transitions[-1].event == "stop" else "Profit",
@@ -175,6 +181,10 @@ def run_demo(day: date, execution_model_tag: str = DEFAULT_EXECUTION_MODEL_TAG) 
         f"plan: {result['direction']} {result['quantity']:.8f} @ {result['entry_price']:.2f} "
         f"stop {result['stop_price']:.2f} target {result['target_price']:.2f} "
         f"max_loss ${result['max_loss_usd']:.2f}"
+    )
+    print(
+        f"timing: entry {result['entry_ts']:.0f} @ {result['entry_price']:.2f} "
+        f"exit {result['exit_ts']:.0f} @ {result['exit_price']:.2f}"
     )
     print("lifecycle: " + " -> ".join(result["transitions"]))
     print(
