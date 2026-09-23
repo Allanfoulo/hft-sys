@@ -84,11 +84,20 @@ def replay_day(day: date, execution_model_tag: str = DEFAULT_EXECUTION_MODEL_TAG
         return {"ok": False, "date": day.isoformat(), "error": f"Jev vetoed fixture: {reason}"}
     plan = build_trade_plan(signal, execution_model_tag=execution_model_tag)
     position = SweepPosition(plan)
-    transitions = [
-        position.update(_bar(one_minute_start + 8 * 60, 5, (101, 104.2, 103.5, 104))),
-        position.update(_bar(one_minute_start + 9 * 60, 5, (104, 108.6, 106.5, 108))),
-        position.update(_bar(one_minute_start + 10 * 60, 5, (108, 110.1, 108.1, 110))),
-    ]
+    # The fixture deliberately includes both paths so a range replay tests
+    # loss handling as well as target handling. This is still simulated data,
+    # never a claim about the market on that date.
+    loss_fixture = day.toordinal() % 5 == 0
+    if loss_fixture:
+        transitions = [
+            position.update(_bar(one_minute_start + 8 * 60, 5, (101, 101.5, 97.8, 99))),
+        ]
+    else:
+        transitions = [
+            position.update(_bar(one_minute_start + 8 * 60, 5, (101, 104.2, 103.5, 104))),
+            position.update(_bar(one_minute_start + 9 * 60, 5, (104, 108.6, 106.5, 108))),
+            position.update(_bar(one_minute_start + 10 * 60, 5, (108, 110.1, 108.1, 110))),
+        ]
     if transitions[-1].state.status != "closed":
         return {"ok": False, "date": day.isoformat(), "error": "fixture did not close at target"}
 
@@ -107,8 +116,10 @@ def replay_day(day: date, execution_model_tag: str = DEFAULT_EXECUTION_MODEL_TAG
         "target_price": plan.target_price,
         "max_loss_usd": plan.max_loss_usd,
         "outcome": transitions[-1].event,
-        "r_multiple": 3.0,
-        "pnl_usd": plan.max_loss_usd * 3.0,
+        "profit_loss": "Loss" if transitions[-1].event == "stop" else "Profit",
+        "simulated": True,
+        "r_multiple": -1.0 if transitions[-1].event == "stop" else 3.0,
+        "pnl_usd": plan.max_loss_usd * (-1.0 if transitions[-1].event == "stop" else 3.0),
         "transitions": [transition.event for transition in transitions],
     }
 
@@ -135,6 +146,8 @@ def replay_range(
         "end": end.isoformat(),
         "execution_model_tag": execution_model_tag,
         "fixture": True,
+        "historical": False,
+        "simulated": True,
         "rows": rows,
         "summary": {
             "sessions": len(rows),
@@ -164,7 +177,11 @@ def run_demo(day: date, execution_model_tag: str = DEFAULT_EXECUTION_MODEL_TAG) 
         f"max_loss ${result['max_loss_usd']:.2f}"
     )
     print("lifecycle: " + " -> ".join(result["transitions"]))
-    print("replay passed: structure, Jev filter, tagged plan, and exits")
+    print(
+        f"simulated result: {result['profit_loss']} {result['r_multiple']:+.1f}R "
+        f"(${result['pnl_usd']:+.2f})"
+    )
+    print("replay passed: structure, Jev filter, tagged plan, and exit path")
     return 0
 
 

@@ -90,7 +90,10 @@ uv run python -m jevloop replay-sweep --date 2026-09-23 --tag london-sweep-canar
 ```
 
 The command prints the 15m bias, 1m setup, 5s signal, execution tag, bounded
-trade plan, and the expected break-even → profit-lock → target lifecycle.
+trade plan, and a simulated exit path. The date-range page includes both
+simulated profit and loss cases so it tests both branches of the lifecycle.
+These rows are validation scenarios, not historical Alpaca fills; a historical
+backtest needs a bar-data source wired into the replay adapter.
 
 The model is replayable without a broker. Feed trades to
 `jevloop.sweep_model.SweepExecutionModel`, inspect the returned `entry_plan`,

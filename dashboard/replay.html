@@ -150,6 +150,8 @@
       .metric.good .value { color: var(--green); }
       .metric.warn { border-color: var(--amber); }
       .metric.warn .value { color: var(--amber); }
+      .metric.bad { border-color: var(--red); }
+      .metric.bad .value { color: var(--red); }
       .workbench { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(360px, 0.9fr); gap: 14px; }
       .card { min-width: 0; padding: 18px 20px; border: 1px solid var(--hair); border-radius: 14px; background: var(--card); }
       .panel-head { justify-content: space-between; gap: 12px; }
@@ -165,6 +167,7 @@
       td { padding: 10px 8px; border-top: 1px solid var(--hair); color: var(--ink3); white-space: nowrap; }
       td:first-child { color: var(--ink); }
       td.good { color: var(--green); }
+      td.bad { color: var(--red); }
       .tag-cell { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
       .detail { display: none; margin-top: 14px; }
       .detail.show { display: block; }
@@ -223,12 +226,13 @@
         </div>
         <button id="run" type="button">Run replay</button>
       </section>
-      <div class="notice"><strong>Fixture replay.</strong> Deterministic UTC bars validate model behavior. Historical Alpaca bars are not being claimed here.</div>
+      <div class="notice"><strong>Fixture replay.</strong> Deterministic UTC bars validate model behavior. These rows are simulated cases, not broker fills or historical Alpaca results.</div>
 
       <section class="metric-grid" aria-label="Replay summary">
         <div class="metric"><div class="label">Sessions</div><div class="value" id="sessions">—</div></div>
         <div class="metric"><div class="label">Trades</div><div class="value" id="trades">—</div></div>
-        <div class="metric good"><div class="label">Wins</div><div class="value" id="wins">—</div></div>
+        <div class="metric good"><div class="label">Profit</div><div class="value" id="wins">—</div></div>
+        <div class="metric bad"><div class="label">Loss</div><div class="value" id="losses">—</div></div>
         <div class="metric"><div class="label">Total R</div><div class="value" id="total-r">—</div></div>
         <div class="metric good"><div class="label">P&amp;L</div><div class="value" id="pnl">—</div></div>
       </section>
@@ -237,7 +241,7 @@
         <div class="card">
           <div class="panel-head">
             <div class="eyebrow">Cumulative result</div>
-            <div class="panel-note" id="curve-note">Run a range to plot results</div>
+            <div class="panel-note" id="curve-note">Simulated cases only</div>
           </div>
           <div class="chart-wrap" id="chart-wrap">
             <div class="empty" id="empty">No replay loaded<span>Choose a range, then run the model.</span></div>
@@ -248,10 +252,10 @@
         <div class="card ledger">
           <div class="panel-head">
             <div class="eyebrow">Execution ledger</div>
-            <div class="panel-note" id="ledger-note">0 rows</div>
+            <div class="panel-note" id="ledger-note">0 simulated rows</div>
           </div>
           <table>
-            <thead><tr><th>Date</th><th>Side</th><th>Result</th><th>R</th><th>Tag</th></tr></thead>
+            <thead><tr><th>Date</th><th>Side</th><th>Result</th><th>P/L</th><th>R</th><th>Tag</th></tr></thead>
             <tbody id="ledger-body"></tbody>
           </table>
         </div>
@@ -310,6 +314,7 @@
         $("sessions").textContent = summary.sessions ?? "—";
         $("trades").textContent = summary.trades ?? "—";
         $("wins").textContent = summary.wins ?? "—";
+        $("losses").textContent = summary.losses ?? "—";
         $("total-r").textContent = summary.total_r == null ? "—" : `${Number(summary.total_r).toFixed(1)}R`;
         $("pnl").textContent = summary.pnl_usd == null ? "—" : money(summary.pnl_usd);
         $("ledger-note").textContent = `${rows.length} row${rows.length === 1 ? "" : "s"}`;
@@ -323,10 +328,11 @@
         $("sessions").textContent = "—";
         $("trades").textContent = "—";
         $("wins").textContent = "—";
+        $("losses").textContent = "—";
         $("total-r").textContent = "—";
         $("pnl").textContent = "—";
-        $("ledger-note").textContent = "0 rows";
-        $("curve-note").textContent = "Run a range to plot results";
+        $("ledger-note").textContent = "0 simulated rows";
+        $("curve-note").textContent = "Simulated cases only";
         $("empty").style.display = "grid";
         $("ledger-body").innerHTML = "";
         $("curve").innerHTML = "";
@@ -337,8 +343,9 @@
           <tr data-index="${index}">
             <td>${esc(row.date)}</td>
             <td>${esc(String(row.direction || "—").toUpperCase())}</td>
-            <td class="good">${esc(row.outcome || "—")}</td>
-            <td class="good">${row.r_multiple == null ? "—" : `+${Number(row.r_multiple).toFixed(1)}R`}</td>
+            <td class="${row.profit_loss === "Profit" ? "good" : "bad"}">${esc(row.outcome || "—")}</td>
+            <td class="${row.profit_loss === "Profit" ? "good" : "bad"}">${esc(row.profit_loss || "—")}</td>
+            <td class="${row.profit_loss === "Profit" ? "good" : "bad"}">${row.r_multiple == null ? "—" : `${Number(row.r_multiple) >= 0 ? "+" : ""}${Number(row.r_multiple).toFixed(1)}R`}</td>
             <td class="tag-cell" title="${esc(row.execution_model_tag || "—")}">${esc(row.execution_model_tag || "—")}</td>
           </tr>`).join("");
         $("ledger-body").querySelectorAll("tr").forEach((row) => {
@@ -359,7 +366,7 @@
         const y = (value) => top + (height - top - bottom) * (1 - (value - min) / span);
         const path = values.map((value, index) => `${index ? "L" : "M"}${x(index).toFixed(1)} ${y(value).toFixed(1)}`).join(" ");
         const zero = y(0);
-        const dots = values.slice(1).map((value, index) => `<circle cx="${x(index + 1)}" cy="${y(value)}" r="4" fill="#1f7a4d"/>`).join("");
+        const dots = values.slice(1).map((value, index) => `<circle cx="${x(index + 1)}" cy="${y(value)}" r="4" fill="${Number(rows[index].r_multiple) >= 0 ? "#1f7a4d" : "#b91c1c"}"/>`).join("");
         const labels = rows.map((row, index) => index === 0 || index === rows.length - 1 ? `<text class="axis" x="${x(index + 1)}" y="${height - 10}" text-anchor="middle">${row.date.slice(5)}</text>` : "").join("");
         svg.innerHTML = `<line x1="${left}" x2="${width - right}" y1="${zero}" y2="${zero}" stroke="rgba(11,11,16,.18)" stroke-dasharray="3 4"/><path d="${path} V${zero} H${left} Z" fill="rgba(31,122,77,.10)"/><path d="${path}" fill="none" stroke="#1f7a4d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>${dots}${labels}<text class="axis" x="${left - 8}" y="${y(max) + 4}" text-anchor="end">${money(max)}</text><text class="axis" x="${left - 8}" y="${zero + 4}" text-anchor="end">$0.00</text>`;
       }
@@ -368,7 +375,9 @@
         if (!row) return;
         $("detail").classList.add("show");
         $("detail-date").textContent = `${row.date} · ${row.execution_model_tag}`;
-        $("detail-copy").innerHTML = `The ${esc(row.direction)} setup entered at <code>${Number(row.entry_price).toFixed(2)}</code>, protected at <code>${Number(row.stop_price).toFixed(2)}</code>, and targeted <code>${Number(row.target_price).toFixed(2)}</code>. Lifecycle: <code>${esc((row.transitions || []).join(" → "))}</code>. Result: <code>${esc(row.outcome)}</code>, <code>+${Number(row.r_multiple).toFixed(1)}R</code>, ${money(row.pnl_usd)}.`;
+        const resultWord = String(row.profit_loss || "").toLowerCase();
+        const rText = `${Number(row.r_multiple) >= 0 ? "+" : ""}${Number(row.r_multiple).toFixed(1)}R`;
+        $("detail-copy").innerHTML = `This simulated ${esc(resultWord)} case entered at <code>${Number(row.entry_price).toFixed(2)}</code>, protected at <code>${Number(row.stop_price).toFixed(2)}</code>, and targeted <code>${Number(row.target_price).toFixed(2)}</code>. Lifecycle: <code>${esc((row.transitions || []).join(" → "))}</code>. Result: <code>${esc(row.outcome)}</code>, <code>${rText}</code>, ${money(row.pnl_usd)}.`;
       }
 
       $("run").addEventListener("click", runReplay);

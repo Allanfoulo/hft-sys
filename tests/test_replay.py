@@ -21,6 +21,15 @@ def test_replay_range_returns_tagged_rows_and_summary():
     assert all(row["execution_model_tag"] == "range-test" for row in result["rows"])
 
 
+def test_fixture_replay_exercises_profit_and_loss_paths():
+    result = replay_range(date(2026, 8, 1), date(2026, 8, 3), "mixed-test")
+    assert result["summary"]["wins"] == 2
+    assert result["summary"]["losses"] == 1
+    assert result["summary"]["total_r"] == pytest.approx(5.0)
+    assert {row["profit_loss"] for row in result["rows"]} == {"Profit", "Loss"}
+    assert all(row["simulated"] is True for row in result["rows"])
+
+
 def test_replay_range_rejects_reversed_or_oversized_ranges():
     with pytest.raises(ValueError, match="on or after"):
         replay_range(date(2026, 9, 24), date(2026, 9, 23))
