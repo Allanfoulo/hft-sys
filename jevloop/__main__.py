@@ -1,4 +1,4 @@
-"""CLI dispatcher: `jev-loop run|calibrate|serve|validate-symbol|explain-split`.
+"""CLI dispatcher: `jev-loop run|calibrate|serve|validate-symbol|explain-split|replay-sweep`.
 
 Also invocable as `uv run python -m jevloop <command> ...` from inside the
 skill directory, which is what the /jev-loop skill's SKILL.md tells Claude
@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 load_dotenv()
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-USAGE = "usage: jev-loop <run|calibrate|serve|validate-symbol|explain-split> [options]"
+USAGE = "usage: jev-loop <run|calibrate|serve|validate-symbol|explain-split|replay-sweep> [options]"
 
 
 def _validate_symbol(argv: list[str]) -> int:
@@ -73,6 +73,10 @@ def main() -> int:
         return _validate_symbol(rest)
     if command == "explain-split":
         return _explain_split(rest)
+    if command == "replay-sweep":
+        from . import replay
+
+        return replay.main(rest)
 
     print(f"unknown command: {command!r}. {USAGE}")
     return 1

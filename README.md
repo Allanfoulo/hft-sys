@@ -81,6 +81,17 @@ Every plan and replay event carries `execution_model_tag="london-sweep-v1"`
 by default. Pass a custom tag to `SweepExecutionModel` when running a canary
 or revised version; `accept_plan()` rejects a plan tagged for another model.
 
+To test it outside London hours, run the offline fixture replay. Its timestamps
+are fixed UTC values, so it does not wait for the wall clock or call Alpaca:
+
+```bash
+uv run python -m jevloop replay-sweep --date 2026-09-23
+uv run python -m jevloop replay-sweep --date 2026-09-23 --tag london-sweep-canary
+```
+
+The command prints the 15m bias, 1m setup, 5s signal, execution tag, bounded
+trade plan, and the expected break-even → profit-lock → target lifecycle.
+
 The model is replayable without a broker. Feed trades to
 `jevloop.sweep_model.SweepExecutionModel`, inspect the returned `entry_plan`,
 then call `accept_plan()` only after the paper broker confirms the entry. The
