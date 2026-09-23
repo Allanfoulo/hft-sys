@@ -77,6 +77,10 @@ $50 position caps with a $5 maximum stop risk, targets 3R, moves the stop to
 break-even at 1R, and locks 2R when price reaches 2.5R. Short plans require
 sellable spot inventory, so the model never creates a naked short.
 
+Every plan and replay event carries `execution_model_tag="london-sweep-v1"`
+by default. Pass a custom tag to `SweepExecutionModel` when running a canary
+or revised version; `accept_plan()` rejects a plan tagged for another model.
+
 The model is replayable without a broker. Feed trades to
 `jevloop.sweep_model.SweepExecutionModel`, inspect the returned `entry_plan`,
 then call `accept_plan()` only after the paper broker confirms the entry. The

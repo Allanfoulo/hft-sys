@@ -12,6 +12,8 @@ from dataclasses import dataclass, replace
 from ..market_structure import Bar
 from ..session_strategy import EntrySignal
 
+DEFAULT_EXECUTION_MODEL_TAG = "london-sweep-v1"
+
 
 class TradePlanError(ValueError):
     """The signal cannot be converted into a bounded spot trade."""
@@ -52,6 +54,12 @@ class TradePlan:
     quantity: float
     risk_per_unit: float
     max_loss_usd: float
+    execution_model_tag: str = DEFAULT_EXECUTION_MODEL_TAG
+
+    @property
+    def model_tag(self) -> str:
+        """Short alias used by loggers and dashboard adapters."""
+        return self.execution_model_tag
 
 
 def build_trade_plan(
@@ -59,9 +67,12 @@ def build_trade_plan(
     config: SweepRiskConfig | None = None,
     *,
     inventory_qty: float = 0.0,
+    execution_model_tag: str = DEFAULT_EXECUTION_MODEL_TAG,
 ) -> TradePlan:
     """Build a capped 3R plan from a deterministic entry signal."""
     config = config or SweepRiskConfig()
+    if not execution_model_tag.strip():
+        raise TradePlanError("execution_model_tag must not be blank")
     if signal.direction not in {"long", "short"}:
         raise TradePlanError(f"unknown direction: {signal.direction!r}")
     entry = float(signal.entry_price)
@@ -101,6 +112,7 @@ def build_trade_plan(
         quantity=max_qty,
         risk_per_unit=distance,
         max_loss_usd=max_qty * distance,
+        execution_model_tag=execution_model_tag,
     )
 
 

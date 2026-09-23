@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import pytest
 
 from jevloop.execution.sweep import (
+    DEFAULT_EXECUTION_MODEL_TAG,
     ShortInventoryError,
     SweepPosition,
     SweepRiskConfig,
@@ -11,6 +12,7 @@ from jevloop.execution.sweep import (
 )
 from jevloop.market_structure import Bar
 from jevloop.session_strategy import EntrySignal
+from jevloop.sweep_model import ModelEvent, SweepExecutionModel
 
 
 def ts(second: int) -> float:
@@ -27,9 +29,16 @@ def short_signal() -> EntrySignal:
 
 def test_trade_plan_caps_risk_and_targets_three_r():
     plan = build_trade_plan(long_signal())
+    assert plan.execution_model_tag == DEFAULT_EXECUTION_MODEL_TAG
+    assert plan.model_tag == DEFAULT_EXECUTION_MODEL_TAG
     assert plan.quantity == pytest.approx(0.25)  # $5 risk / $1 stop, capped at $25 notional
     assert plan.max_loss_usd == pytest.approx(0.25)
     assert plan.target_price == pytest.approx(103.0)
+
+
+def test_trade_plan_can_carry_a_custom_execution_tag():
+    plan = build_trade_plan(long_signal(), execution_model_tag="london-sweep-canary")
+    assert plan.execution_model_tag == "london-sweep-canary"
 
 
 def test_short_requires_existing_spot_inventory():
@@ -42,6 +51,16 @@ def test_short_requires_existing_spot_inventory():
 def test_invalid_stop_is_rejected():
     with pytest.raises(TradePlanError):
         build_trade_plan(EntrySignal(1, "long", ts(0), 100, 101, 101))
+
+
+def test_model_events_and_accepted_plans_keep_the_execution_tag():
+    model = SweepExecutionModel(execution_model_tag="london-sweep-canary")
+    event = ModelEvent("entry_plan", execution_model_tag=model.execution_model_tag)
+    record = event.as_record()
+    assert record["execution_model_tag"] == "london-sweep-canary"
+    plan = build_trade_plan(long_signal(), execution_model_tag=model.execution_model_tag)
+    model.accept_plan(plan)
+    assert model.position.state.plan.execution_model_tag == "london-sweep-canary"
 
 
 def test_position_moves_to_breakeven_then_profit_lock_then_target():
