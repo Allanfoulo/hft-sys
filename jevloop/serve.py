@@ -17,7 +17,10 @@ from datetime import date
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+from dotenv import load_dotenv
+
 from .execution.sweep import DEFAULT_EXECUTION_MODEL_TAG
+from .historical_replay import HistoricalReplayError, replay_historical_range
 from .replay import replay_range
 
 LOG_DIR = Path(os.environ.get("JEV_LOOP_HOME", str(Path.home() / ".jev-loop")))
@@ -37,13 +40,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         start_text = query.get("start", [""])[0]
         end_text = query.get("end", [start_text])[0]
         tag = query.get("tag", [DEFAULT_EXECUTION_MODEL_TAG])[0].strip()
+        source = query.get("source", ["historical"])[0].strip().lower()
         try:
             start = date.fromisoformat(start_text)
             end = date.fromisoformat(end_text)
             if not tag:
                 raise ValueError("tag must not be blank")
-            payload = replay_range(start, end, tag)
+            if source == "fixture":
+                payload = replay_range(start, end, tag)
+            elif source in {"historical", "alpaca"}:
+                payload = replay_historical_range(start, end, tag)
+            else:
+                raise ValueError("source must be historical or fixture")
             status = 200
+        except HistoricalReplayError as exc:
+            payload = {"error": str(exc), "source": source}
+            status = 503
         except ValueError as exc:
             payload = {"error": str(exc)}
             status = 400
@@ -72,6 +84,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="jev-loop serve")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args(argv)
+
+    # The CLI entry point already loads .env, but the dashboard is often
+    # started by importing this module directly during local development.
+    load_dotenv()
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     latest = LOG_DIR / "latest.json"

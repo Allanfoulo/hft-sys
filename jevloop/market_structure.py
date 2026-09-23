@@ -115,13 +115,41 @@ def detect_sweeps(bars: list[Bar], fractals: list[Fractal]) -> list[Sweep]:
     A low sweep creates a long bias; a high sweep creates a short bias.  The
     fractal must have been confirmed before the sweeping candle opened.
     """
+    # Fractals are confirmed in timestamp order. Keep the latest eligible
+    # level for each side instead of rebuilding a full eligible list for every
+    # bar; the historical replay can otherwise turn a month of 1m bars into an
+    # O(n²) scan.
+    ordered = sorted(fractals, key=lambda item: (item.confirmed_at, item.index))
+    cursor = 0
+    pending_by_index: dict[int, list[Fractal]] = {}
+    latest_high: Fractal | None = None
+    latest_low: Fractal | None = None
     found: list[Sweep] = []
     for i, bar in enumerate(bars):
-        eligible = [f for f in fractals if f.index < i and f.confirmed_at <= bar.start_ts]
-        highs = [f for f in eligible if f.kind == "high" and bar.high > f.level and bar.close < f.level]
-        lows = [f for f in eligible if f.kind == "low" and bar.low < f.level and bar.close > f.level]
-        if highs:
-            found.append(Sweep("short", bar, max(highs, key=lambda f: f.index)))
-        if lows:
-            found.append(Sweep("long", bar, max(lows, key=lambda f: f.index)))
+        # A fractal becomes time-eligible when its confirmation timestamp is
+        # reached, then index-eligible once the sweeping bar is later than its
+        # center. The small pending map preserves both conditions without a
+        # quadratic eligible-list rebuild.
+        while cursor < len(ordered) and ordered[cursor].confirmed_at <= bar.start_ts:
+            fractal = ordered[cursor]
+            if fractal.index < i:
+                eligible = [fractal]
+            else:
+                pending_by_index.setdefault(fractal.index, []).append(fractal)
+                eligible = []
+            for item in eligible:
+                if item.kind == "high" and (latest_high is None or item.index > latest_high.index):
+                    latest_high = item
+                elif item.kind == "low" and (latest_low is None or item.index > latest_low.index):
+                    latest_low = item
+            cursor += 1
+        for fractal in pending_by_index.pop(i - 1, []):
+            if fractal.kind == "high" and (latest_high is None or fractal.index > latest_high.index):
+                latest_high = fractal
+            elif fractal.kind == "low" and (latest_low is None or fractal.index > latest_low.index):
+                latest_low = fractal
+        if latest_high is not None and bar.high > latest_high.level and bar.close < latest_high.level:
+            found.append(Sweep("short", bar, latest_high))
+        if latest_low is not None and bar.low < latest_low.level and bar.close > latest_low.level:
+            found.append(Sweep("long", bar, latest_low))
     return found

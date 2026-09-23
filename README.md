@@ -92,8 +92,23 @@ uv run python -m jevloop replay-sweep --date 2026-09-23 --tag london-sweep-canar
 The command prints the 15m bias, 1m setup, 5s signal, execution tag, bounded
 trade plan, and a simulated exit path. The date-range page includes both
 simulated profit and loss cases so it tests both branches of the lifecycle.
-These rows are validation scenarios, not historical Alpaca fills; a historical
-backtest needs a bar-data source wired into the replay adapter.
+These rows are validation scenarios, not historical Alpaca fills.
+
+The replay lab at `http://127.0.0.1:8765/replay.html` defaults to **Alpaca
+historical** mode. It reads authenticated 1-minute crypto bars over the chosen
+UTC range, derives the 15-minute bias and 1-minute refinement, and labels each
+row `resolution: 1m trigger proxy`. This is a historical structural replay;
+it does not invent Jev judgments or claim exact 5-second/tick fills. The
+Alpaca keys must be present in the branch `.env` (or the process environment):
+
+```bash
+ALPACA_API_KEY=...
+ALPACA_SECRET_KEY=...
+```
+
+Choose **Deterministic fixture** in the page when you need a repeatable
+offline test. Fixture mode is explicit and is never presented as historical
+market data. Historical requests are limited to 32 days per call.
 
 The model is replayable without a broker. Feed trades to
 `jevloop.sweep_model.SweepExecutionModel`, inspect the returned `entry_plan`,
