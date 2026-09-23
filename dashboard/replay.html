@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ISX · replay lab</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Fragment+Mono&family=Instrument+Serif:ital@1&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --canvas: #f6f6f8;
+        --ink: #0b0b10;
+        --ink2: #3b3f4b;
+        --ink3: #5b5f6b;
+        --muted: #8a8f9c;
+        --hair: rgba(11, 11, 16, 0.1);
+        --hair2: rgba(11, 11, 16, 0.14);
+        --blue: #0a8cff;
+        --green: #1f7a4d;
+        --red: #b91c1c;
+        --amber: #b7791f;
+        --green-soft: rgba(31, 122, 77, 0.1);
+        --amber-soft: rgba(183, 121, 31, 0.1);
+        --blue-soft: rgba(10, 140, 255, 0.1);
+        --card: rgba(255, 255, 255, 0.75);
+        --sans: "Instrument Sans", -apple-system, Helvetica, Arial, sans-serif;
+        --mono: "Fragment Mono", ui-monospace, Menlo, monospace;
+        --serif: "Instrument Serif", Georgia, serif;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; min-height: 100%; }
+      body {
+        background:
+          radial-gradient(60% 55% at 12% 0%, rgba(255, 138, 212, 0.35), transparent 60%),
+          radial-gradient(55% 60% at 88% 8%, rgba(140, 200, 255, 0.38), transparent 60%),
+          radial-gradient(50% 50% at 70% 100%, rgba(179, 157, 255, 0.3), transparent 60%),
+          radial-gradient(45% 45% at 15% 100%, rgba(255, 178, 122, 0.28), transparent 60%),
+          var(--canvas);
+        color: var(--ink);
+        font-family: var(--sans);
+        -webkit-font-smoothing: antialiased;
+        padding: 28px;
+      }
+      .frame {
+        width: min(1460px, 100%);
+        min-height: calc(100vh - 56px);
+        margin: 0 auto;
+        padding: 22px 26px 28px;
+        border: 1px solid rgba(255, 255, 255, 0.7);
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.55);
+        box-shadow: 0 30px 80px rgba(11, 11, 16, 0.1);
+        backdrop-filter: blur(18px);
+      }
+      .topbar, .brand, .actions, .controls, .panel-head, .metric-grid, .detail-head {
+        display: flex;
+        align-items: center;
+      }
+      .topbar { justify-content: space-between; gap: 20px; }
+      .brand { gap: 10px; }
+      .brand a { color: inherit; text-decoration: none; }
+      .brand b { font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
+      .brand i { color: var(--ink2); font-family: var(--serif); font-size: 20px; }
+      .actions { gap: 10px; }
+      .pill, .link, button, input {
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+      .pill {
+        padding: 7px 11px;
+        border: 1px solid transparent;
+        border-radius: 999px;
+        color: var(--green);
+        background: var(--green-soft);
+        letter-spacing: 0.03em;
+      }
+      .pill.busy { color: #0763b8; background: var(--blue-soft); }
+      .pill.error { color: var(--red); background: rgba(185, 28, 28, 0.1); }
+      .link { color: var(--ink3); text-decoration: none; }
+      .link:hover { color: var(--ink); }
+      .hero { max-width: 760px; padding: 58px 0 28px; }
+      .eyebrow {
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+      h1 {
+        max-width: 680px;
+        margin: 10px 0 12px;
+        font-size: clamp(32px, 4.6vw, 60px);
+        font-weight: 500;
+        letter-spacing: -0.055em;
+        line-height: 0.98;
+      }
+      .hero p { max-width: 66ch; margin: 0; color: var(--ink3); font-size: 15px; line-height: 1.55; }
+      .controls {
+        flex-wrap: wrap;
+        gap: 12px;
+        padding: 14px;
+        border: 1px solid var(--hair);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.65);
+      }
+      .field { display: grid; gap: 6px; }
+      .field label { color: var(--muted); font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+      input {
+        width: 150px;
+        padding: 10px 11px;
+        color: var(--ink);
+        border: 1px solid var(--hair2);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.8);
+      }
+      input:focus, button:focus, a:focus { outline: 2px solid var(--blue); outline-offset: 2px; }
+      .tag-input { width: 210px; }
+      button {
+        align-self: end;
+        padding: 11px 16px;
+        color: #f9fbff;
+        border: 0;
+        border-radius: 8px;
+        background: var(--ink);
+        cursor: pointer;
+        transition: transform 0.15s ease, opacity 0.15s ease;
+      }
+      button:hover { transform: translateY(-1px); }
+      button:disabled { cursor: wait; opacity: 0.55; transform: none; }
+      .notice {
+        margin-top: 10px;
+        color: var(--ink3);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+      .notice strong { color: var(--amber); font-weight: 400; }
+      .metric-grid { align-items: stretch; gap: 10px; margin: 24px 0 14px; flex-wrap: wrap; }
+      .metric {
+        flex: 1 1 130px;
+        min-width: 130px;
+        padding: 14px 15px;
+        border-top: 2px solid var(--ink);
+        background: rgba(255, 255, 255, 0.6);
+      }
+      .metric .label { color: var(--muted); font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; }
+      .metric .value { margin-top: 8px; font-family: var(--mono); font-size: 24px; letter-spacing: -0.04em; }
+      .metric.good { border-color: var(--green); }
+      .metric.good .value { color: var(--green); }
+      .metric.warn { border-color: var(--amber); }
+      .metric.warn .value { color: var(--amber); }
+      .workbench { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(360px, 0.9fr); gap: 14px; }
+      .card { min-width: 0; padding: 18px 20px; border: 1px solid var(--hair); border-radius: 14px; background: var(--card); }
+      .panel-head { justify-content: space-between; gap: 12px; }
+      .panel-note { color: var(--muted); font-family: var(--mono); font-size: 11px; text-align: right; }
+      .chart-wrap { min-height: 290px; margin-top: 16px; }
+      #curve { width: 100%; height: 290px; display: block; overflow: visible; }
+      .axis { fill: var(--muted); font-family: var(--mono); font-size: 10px; }
+      .empty { display: grid; min-height: 250px; place-items: center; color: var(--muted); font-family: var(--mono); font-size: 12px; text-align: center; }
+      .empty span { display: block; margin-top: 7px; color: var(--ink3); font-family: var(--sans); font-size: 14px; }
+      .ledger { overflow: hidden; }
+      table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 11px; }
+      th { padding: 14px 8px 9px; color: var(--muted); font-size: 10px; font-weight: 400; letter-spacing: 0.06em; text-align: left; text-transform: uppercase; }
+      td { padding: 10px 8px; border-top: 1px solid var(--hair); color: var(--ink3); white-space: nowrap; }
+      td:first-child { color: var(--ink); }
+      td.good { color: var(--green); }
+      .tag-cell { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+      .detail { display: none; margin-top: 14px; }
+      .detail.show { display: block; }
+      .detail-head { justify-content: space-between; gap: 16px; }
+      .detail p { margin: 10px 0 0; color: var(--ink3); font-size: 13px; line-height: 1.5; }
+      .detail code { color: var(--ink); font-family: var(--mono); font-size: 11px; }
+      @media (max-width: 900px) {
+        body { padding: 12px; }
+        .frame { min-height: calc(100vh - 24px); padding: 18px 16px 22px; }
+        .hero { padding-top: 42px; }
+        .workbench { grid-template-columns: 1fr; }
+      }
+      @media (max-width: 560px) {
+        .actions { align-items: flex-end; flex-direction: column; gap: 5px; }
+        .controls { align-items: stretch; flex-direction: column; }
+        .field, input, .tag-input, button { width: 100%; }
+        button { align-self: stretch; }
+        .panel-note { max-width: 45%; }
+        .ledger { overflow-x: auto; }
+        table { min-width: 620px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="frame">
+      <header class="topbar">
+        <div class="brand"><a href="index.html"><b>ISX</b></a><i>Replay lab</i></div>
+        <div class="actions">
+          <span class="pill" id="status" aria-live="polite">READY</span>
+          <a class="link" href="index.html">Live dashboard ↗</a>
+        </div>
+      </header>
+
+      <section class="hero">
+        <div class="eyebrow">Execution model / London sweep v1</div>
+        <h1>Replay a range. See every decision.</h1>
+        <p>
+          Run the tagged 15m bias, 1m refinement, and 5s trigger sequence over a
+          UTC date range. The replay is isolated from the paper account, so it
+          cannot submit orders.
+        </p>
+      </section>
+
+      <section class="controls" aria-label="Replay controls">
+        <div class="field">
+          <label for="start">From UTC</label>
+          <input id="start" type="date" value="2026-09-23" />
+        </div>
+        <div class="field">
+          <label for="end">To UTC</label>
+          <input id="end" type="date" value="2026-09-27" />
+        </div>
+        <div class="field">
+          <label for="tag">Execution tag</label>
+          <input id="tag" class="tag-input" value="london-sweep-v1" maxlength="80" />
+        </div>
+        <button id="run" type="button">Run replay</button>
+      </section>
+      <div class="notice"><strong>Fixture replay.</strong> Deterministic UTC bars validate model behavior. Historical Alpaca bars are not being claimed here.</div>
+
+      <section class="metric-grid" aria-label="Replay summary">
+        <div class="metric"><div class="label">Sessions</div><div class="value" id="sessions">—</div></div>
+        <div class="metric"><div class="label">Trades</div><div class="value" id="trades">—</div></div>
+        <div class="metric good"><div class="label">Wins</div><div class="value" id="wins">—</div></div>
+        <div class="metric"><div class="label">Total R</div><div class="value" id="total-r">—</div></div>
+        <div class="metric good"><div class="label">P&amp;L</div><div class="value" id="pnl">—</div></div>
+      </section>
+
+      <section class="workbench">
+        <div class="card">
+          <div class="panel-head">
+            <div class="eyebrow">Cumulative result</div>
+            <div class="panel-note" id="curve-note">Run a range to plot results</div>
+          </div>
+          <div class="chart-wrap" id="chart-wrap">
+            <div class="empty" id="empty">No replay loaded<span>Choose a range, then run the model.</span></div>
+            <svg id="curve" viewBox="0 0 760 290" role="img" aria-label="Cumulative replay result"></svg>
+          </div>
+        </div>
+
+        <div class="card ledger">
+          <div class="panel-head">
+            <div class="eyebrow">Execution ledger</div>
+            <div class="panel-note" id="ledger-note">0 rows</div>
+          </div>
+          <table>
+            <thead><tr><th>Date</th><th>Side</th><th>Result</th><th>R</th><th>Tag</th></tr></thead>
+            <tbody id="ledger-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card detail" id="detail">
+        <div class="detail-head">
+          <div class="eyebrow">Selected model result</div>
+          <code id="detail-date">—</code>
+        </div>
+        <p id="detail-copy">—</p>
+      </section>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const money = (value) => `$${Number(value || 0).toFixed(2)}`;
+      const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+      let rows = [];
+
+      function setStatus(label, kind = "") {
+        $("status").textContent = label;
+        $("status").className = `pill ${kind}`;
+      }
+
+      async function runReplay() {
+        const start = $("start").value;
+        const end = $("end").value;
+        const tag = $("tag").value.trim();
+        if (!start || !end || !tag) {
+          setStatus("ADD RANGE + TAG", "error");
+          return;
+        }
+        const button = $("run");
+        button.disabled = true;
+        setStatus("RUNNING", "busy");
+        try {
+          const query = new URLSearchParams({ start, end, tag });
+          const response = await fetch(`replay.json?${query.toString()}`, { cache: "no-store" });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "Replay failed");
+          render(data);
+          setStatus("RANGE READY");
+        } catch (error) {
+          rows = [];
+          renderEmpty();
+          setStatus(error.message || "REPLAY ERROR", "error");
+        } finally {
+          button.disabled = false;
+        }
+      }
+
+      function render(data) {
+        rows = data.rows || [];
+        const summary = data.summary || {};
+        $("sessions").textContent = summary.sessions ?? "—";
+        $("trades").textContent = summary.trades ?? "—";
+        $("wins").textContent = summary.wins ?? "—";
+        $("total-r").textContent = summary.total_r == null ? "—" : `${Number(summary.total_r).toFixed(1)}R`;
+        $("pnl").textContent = summary.pnl_usd == null ? "—" : money(summary.pnl_usd);
+        $("ledger-note").textContent = `${rows.length} row${rows.length === 1 ? "" : "s"}`;
+        $("curve-note").textContent = `${data.start} → ${data.end} · ${data.execution_model_tag}`;
+        $("empty").style.display = rows.length ? "none" : "grid";
+        renderLedger();
+        renderCurve();
+      }
+
+      function renderEmpty() {
+        $("sessions").textContent = "—";
+        $("trades").textContent = "—";
+        $("wins").textContent = "—";
+        $("total-r").textContent = "—";
+        $("pnl").textContent = "—";
+        $("ledger-note").textContent = "0 rows";
+        $("curve-note").textContent = "Run a range to plot results";
+        $("empty").style.display = "grid";
+        $("ledger-body").innerHTML = "";
+        $("curve").innerHTML = "";
+      }
+
+      function renderLedger() {
+        $("ledger-body").innerHTML = rows.map((row, index) => `
+          <tr data-index="${index}">
+            <td>${esc(row.date)}</td>
+            <td>${esc(String(row.direction || "—").toUpperCase())}</td>
+            <td class="good">${esc(row.outcome || "—")}</td>
+            <td class="good">${row.r_multiple == null ? "—" : `+${Number(row.r_multiple).toFixed(1)}R`}</td>
+            <td class="tag-cell" title="${esc(row.execution_model_tag || "—")}">${esc(row.execution_model_tag || "—")}</td>
+          </tr>`).join("");
+        $("ledger-body").querySelectorAll("tr").forEach((row) => {
+          row.addEventListener("click", () => showDetail(rows[Number(row.dataset.index)]));
+        });
+      }
+
+      function renderCurve() {
+        const svg = $("curve");
+        if (!rows.length) { svg.innerHTML = ""; return; }
+        const width = 760, height = 290, left = 42, right = 18, top = 18, bottom = 36;
+        const values = [];
+        let total = 0;
+        values.push(0);
+        rows.forEach((row) => { total += Number(row.pnl_usd || 0); values.push(total); });
+        const min = Math.min(0, ...values), max = Math.max(0.01, ...values), span = Math.max(max - min, 0.01);
+        const x = (index) => left + index * (width - left - right) / Math.max(1, values.length - 1);
+        const y = (value) => top + (height - top - bottom) * (1 - (value - min) / span);
+        const path = values.map((value, index) => `${index ? "L" : "M"}${x(index).toFixed(1)} ${y(value).toFixed(1)}`).join(" ");
+        const zero = y(0);
+        const dots = values.slice(1).map((value, index) => `<circle cx="${x(index + 1)}" cy="${y(value)}" r="4" fill="#1f7a4d"/>`).join("");
+        const labels = rows.map((row, index) => index === 0 || index === rows.length - 1 ? `<text class="axis" x="${x(index + 1)}" y="${height - 10}" text-anchor="middle">${row.date.slice(5)}</text>` : "").join("");
+        svg.innerHTML = `<line x1="${left}" x2="${width - right}" y1="${zero}" y2="${zero}" stroke="rgba(11,11,16,.18)" stroke-dasharray="3 4"/><path d="${path} V${zero} H${left} Z" fill="rgba(31,122,77,.10)"/><path d="${path}" fill="none" stroke="#1f7a4d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>${dots}${labels}<text class="axis" x="${left - 8}" y="${y(max) + 4}" text-anchor="end">${money(max)}</text><text class="axis" x="${left - 8}" y="${zero + 4}" text-anchor="end">$0.00</text>`;
+      }
+
+      function showDetail(row) {
+        if (!row) return;
+        $("detail").classList.add("show");
+        $("detail-date").textContent = `${row.date} · ${row.execution_model_tag}`;
+        $("detail-copy").innerHTML = `The ${esc(row.direction)} setup entered at <code>${Number(row.entry_price).toFixed(2)}</code>, protected at <code>${Number(row.stop_price).toFixed(2)}</code>, and targeted <code>${Number(row.target_price).toFixed(2)}</code>. Lifecycle: <code>${esc((row.transitions || []).join(" → "))}</code>. Result: <code>${esc(row.outcome)}</code>, <code>+${Number(row.r_multiple).toFixed(1)}R</code>, ${money(row.pnl_usd)}.`;
+      }
+
+      $("run").addEventListener("click", runReplay);
+      runReplay();
+    </script>
+  </body>
+</html>

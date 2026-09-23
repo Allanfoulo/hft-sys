@@ -1,6 +1,8 @@
 from datetime import date
 
-from jevloop.replay import run_demo
+import pytest
+
+from jevloop.replay import replay_range, run_demo
 
 
 def test_offline_replay_runs_outside_the_wall_clock(capsys):
@@ -8,3 +10,19 @@ def test_offline_replay_runs_outside_the_wall_clock(capsys):
     output = capsys.readouterr().out
     assert "execution_model_tag: london-sweep-test" in output
     assert "replay passed" in output
+
+
+def test_replay_range_returns_tagged_rows_and_summary():
+    result = replay_range(date(2026, 9, 23), date(2026, 9, 25), "range-test")
+    assert result["fixture"] is True
+    assert result["summary"]["sessions"] == 3
+    assert result["summary"]["trades"] == 3
+    assert result["summary"]["total_r"] == pytest.approx(9.0)
+    assert all(row["execution_model_tag"] == "range-test" for row in result["rows"])
+
+
+def test_replay_range_rejects_reversed_or_oversized_ranges():
+    with pytest.raises(ValueError, match="on or after"):
+        replay_range(date(2026, 9, 24), date(2026, 9, 23))
+    with pytest.raises(ValueError, match="91 days"):
+        replay_range(date(2026, 1, 1), date(2026, 4, 2))

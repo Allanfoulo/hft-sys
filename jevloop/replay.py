@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from .execution.sweep import (
     DEFAULT_EXECUTION_MODEL_TAG,
@@ -22,8 +22,12 @@ def _bar(start_ts: float, interval_s: int, values: tuple[float, float, float, fl
     return Bar(start_ts, interval_s, *values)
 
 
-def run_demo(day: date, execution_model_tag: str = DEFAULT_EXECUTION_MODEL_TAG) -> int:
-    """Replay one deterministic long setup using timestamps inside London."""
+def replay_day(day: date, execution_model_tag: str = DEFAULT_EXECUTION_MODEL_TAG) -> dict:
+    """Replay one deterministic long setup using timestamps inside London.
+
+    This returns structured data so the dashboard and the CLI consume exactly
+    the same replay result.
+    """
     session_day = _utc_start(day, 0)
     pre_session = session_day + 6 * 3600
     fifteen_values = [
@@ -44,8 +48,7 @@ def run_demo(day: date, execution_model_tag: str = DEFAULT_EXECUTION_MODEL_TAG) 
     for sweep in fifteen_sweeps:
         engine.on_15m_sweep(sweep)
     if engine.snapshot.bias != "long":
-        print("replay failed: fixture did not establish a long London bias")
-        return 1
+        return {"ok": False, "date": day.isoformat(), "error": "fixture did not establish a long London bias"}
 
     one_minute_start = session_day + 8 * 3600
     one_minute_values = [
@@ -68,8 +71,7 @@ def run_demo(day: date, execution_model_tag: str = DEFAULT_EXECUTION_MODEL_TAG) 
     trigger = _bar(one_minute_start + 7 * 60, 5, (100.8, 101.2, 100.7, 101.1))
     signal = engine.on_5s_bar(trigger)
     if setup is None or signal is None:
-        print("replay failed: fixture did not produce a 5s entry signal")
-        return 1
+        return {"ok": False, "date": day.isoformat(), "error": "fixture did not produce a 5s entry signal"}
 
     answers = {
         "regime": {"choice": "normal"},
@@ -79,8 +81,7 @@ def run_demo(day: date, execution_model_tag: str = DEFAULT_EXECUTION_MODEL_TAG) 
     }
     allowed, reason = jev_allows_entry(answers, signal.direction)
     if not allowed:
-        print(f"replay failed: Jev vetoed fixture: {reason}")
-        return 1
+        return {"ok": False, "date": day.isoformat(), "error": f"Jev vetoed fixture: {reason}"}
     plan = build_trade_plan(signal, execution_model_tag=execution_model_tag)
     position = SweepPosition(plan)
     transitions = [
@@ -89,18 +90,80 @@ def run_demo(day: date, execution_model_tag: str = DEFAULT_EXECUTION_MODEL_TAG) 
         position.update(_bar(one_minute_start + 10 * 60, 5, (108, 110.1, 108.1, 110))),
     ]
     if transitions[-1].state.status != "closed":
-        print("replay failed: fixture did not close at target")
+        return {"ok": False, "date": day.isoformat(), "error": "fixture did not close at target"}
+
+    return {
+        "ok": True,
+        "date": day.isoformat(),
+        "session": "08:00-11:00 UTC",
+        "execution_model_tag": plan.execution_model_tag,
+        "bias": engine.snapshot.bias,
+        "setup_id": setup.setup_id,
+        "signal_ts": signal.timestamp,
+        "direction": plan.direction,
+        "quantity": plan.quantity,
+        "entry_price": plan.entry_price,
+        "stop_price": plan.stop_price,
+        "target_price": plan.target_price,
+        "max_loss_usd": plan.max_loss_usd,
+        "outcome": transitions[-1].event,
+        "r_multiple": 3.0,
+        "pnl_usd": plan.max_loss_usd * 3.0,
+        "transitions": [transition.event for transition in transitions],
+    }
+
+
+def replay_range(
+    start: date,
+    end: date,
+    execution_model_tag: str = DEFAULT_EXECUTION_MODEL_TAG,
+) -> dict:
+    """Replay an inclusive UTC date range using the deterministic fixture."""
+    if not execution_model_tag.strip():
+        raise ValueError("execution model tag must not be blank")
+    if end < start:
+        raise ValueError("end date must be on or after start date")
+    if (end - start).days > 90:
+        raise ValueError("date range cannot exceed 91 days")
+    rows = [
+        replay_day(start + timedelta(days=offset), execution_model_tag)
+        for offset in range((end - start).days + 1)
+    ]
+    successful = [row for row in rows if row.get("ok")]
+    return {
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "execution_model_tag": execution_model_tag,
+        "fixture": True,
+        "rows": rows,
+        "summary": {
+            "sessions": len(rows),
+            "setups": len(successful),
+            "trades": len(successful),
+            "wins": sum(1 for row in successful if row["r_multiple"] > 0),
+            "losses": sum(1 for row in successful if row["r_multiple"] <= 0),
+            "total_r": sum(row["r_multiple"] for row in successful),
+            "pnl_usd": sum(row["pnl_usd"] for row in successful),
+        },
+    }
+
+
+def run_demo(day: date, execution_model_tag: str = DEFAULT_EXECUTION_MODEL_TAG) -> int:
+    """Print one deterministic replay result for terminal use."""
+    result = replay_day(day, execution_model_tag)
+    if not result.get("ok"):
+        print(f"replay failed: {result['error']}")
         return 1
 
-    print(f"execution_model_tag: {plan.execution_model_tag}")
+    print(f"execution_model_tag: {result['execution_model_tag']}")
     print(f"fixture session: {day.isoformat()} 08:00-11:00 UTC")
-    print(f"bias: {engine.snapshot.bias} | setup: {setup.setup_id} | signal: {signal.timestamp:.0f}")
+    print(f"bias: {result['bias']} | setup: {result['setup_id']} | signal: {result['signal_ts']:.0f}")
     print(
-        f"plan: {plan.direction} {plan.quantity:.8f} @ {plan.entry_price:.2f} "
-        f"stop {plan.stop_price:.2f} target {plan.target_price:.2f} "
-        f"max_loss ${plan.max_loss_usd:.2f}"
+        f"plan: {result['direction']} {result['quantity']:.8f} @ {result['entry_price']:.2f} "
+        f"stop {result['stop_price']:.2f} target {result['target_price']:.2f} "
+        f"max_loss ${result['max_loss_usd']:.2f}"
     )
-    print("lifecycle: " + " -> ".join(t.event for t in transitions))
+    print("lifecycle: " + " -> ".join(result["transitions"]))
     print("replay passed: structure, Jev filter, tagged plan, and exits")
     return 0
 
