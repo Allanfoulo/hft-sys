@@ -62,6 +62,27 @@ fills. `jevloop/strategy.py` owns the seven tunable thresholds behind
 look at every action before it goes near an order, free to change or
 veto it. The shipped default matches exactly what the video ran.
 
+## London sweep execution model (feature branch)
+
+The `feature/london-sweep-execution` branch also contains a broker-neutral
+execution model based on the supplied sweep-and-refinement rules. It keeps a
+confirmed 15-minute bias, accepts a matching 1-minute sweep, uses the first
+1-minute candle after that sweep as the refinement trigger, and emits one
+5-second break signal. A signal is filtered by Jev's regime, execution-health,
+quote-environment, and direction answers only after the deterministic levels
+are set by code.
+
+`jevloop/execution/sweep.py` sizes each plan under the existing $25 order and
+$50 position caps with a $5 maximum stop risk, targets 3R, moves the stop to
+break-even at 1R, and locks 2R when price reaches 2.5R. Short plans require
+sellable spot inventory, so the model never creates a naked short.
+
+The model is replayable without a broker. Feed trades to
+`jevloop.sweep_model.SweepExecutionModel`, inspect the returned `entry_plan`,
+then call `accept_plan()` only after the paper broker confirms the entry. The
+existing Alpaca loop remains the default and no live-trading path is enabled
+by this model.
+
 ## The nine-stage loop
 
 ```
