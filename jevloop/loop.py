@@ -37,6 +37,7 @@ import os
 import signal
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .assets import AssetSpec, UnknownSymbolError, resolve_symbol, size_order
@@ -56,8 +57,10 @@ from .execution.alpaca import (
 )
 from .ladder import Rung, select_rung
 from .limits import Limits
+from .market_data import AlpacaHistoricalBarsProvider
 from .policy import (
     KILL,
+    ISX_X,
     PULL_QUOTES,
     QUOTE_BOTH_SIDES,
     QUOTE_WIDE,
@@ -66,6 +69,8 @@ from .policy import (
     compose_action,
     fallback_action,
 )
+from .isx import Direction, ISXEngine
+from .policy import Action
 from .pricing import quote_prices
 from .state import InventoryState, build_snapshot, record_fill_slippage, update_vwap
 
@@ -97,8 +102,13 @@ def run(
     dry_execution: bool = False,
     live: bool = False,
     confirmation: str | None = None,
+    isx: bool = False,
 ) -> int:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    if isx and live:
+        print("cannot start: ISX mode is paper-only and refuses live execution")
+        return 1
 
     try:
         spec = resolve_symbol(symbol)
@@ -118,6 +128,8 @@ def run(
         return 1
 
     client = resolve_decision_client(mock=mock)
+    isx_engine = ISXEngine() if isx else None
+    historical = AlpacaHistoricalBarsProvider(alpaca) if isx else None
     session_txt = "24/7" if spec.is_24_7 else "market hours only"
     print(
         f"asset: {spec.symbol} ({spec.asset_class}, {session_txt}, "
@@ -250,6 +262,18 @@ def run(
                 has_depth=spec.has_depth,
             )
 
+            isx_decision = None
+            if isx:
+                try:
+                    isx_bars = {
+                        timeframe: historical.get_bars(timeframe, limit=300, end=datetime.now(timezone.utc))
+                        for timeframe in ("H4", "H1", "M15")
+                    }
+                    isx_decision = isx_engine.update(isx_bars)
+                except (AlpacaAPIError, ValueError) as exc:
+                    isx_decision = None
+                    print(f"tick {block} | ISX historical data unavailable: {exc}")
+
             # 4. battery (respecting the block deadline)
             elapsed = time.monotonic() - tick_start
             budget = max(0.05, limits.tick_seconds - elapsed - 0.15)
@@ -276,7 +300,14 @@ def run(
                     print(f"tick {block} | decision client error: {exc}")
 
             # 5. policy engine (code) + 6. pricing (code)
-            if decision_late:
+            if isx and isx_decision is not None:
+                if isx_decision.x_ready:
+                    action = Action(ISX_X, reason=isx_decision.reason, direction_leg=isx_decision.direction.value)
+                else:
+                    action = Action(STAND_DOWN, reason=isx_decision.reason)
+            elif isx:
+                action = Action(STAND_DOWN, reason="ISX historical bars unavailable")
+            elif decision_late:
                 action = None
             elif jev_down or answers is None:
                 action = fallback_action(snapshot, limits)
@@ -350,6 +381,7 @@ def run(
                     rest_counter=rest_counter,
                     now=now,
                     dry=dry_execution,
+                    execution_tag=isx_decision.execution_tag if isx_decision else None,
                 )
 
             # 9. log
@@ -396,6 +428,19 @@ def run(
                 "fill_qty": fill_qty,
                 "fill_price": fill_price,
             }
+            if isx_decision is not None:
+                record.update(isx_decision.observability)
+                record["execution_tag"] = isx_decision.execution_tag
+            else:
+                record.update({
+                    "isx_setup_id": None, "isx_phase": None, "h4_direction": None,
+                    "h1_direction": None, "intent": None, "ex": None, "px": None,
+                    "ep": None, "s1_time": None, "fib_retracement": None,
+                    "aoi_qualified": False, "s2_time": None, "x_ready": False,
+                    "invalidation_price": None, "stand_down_reason": None,
+                    "isx_transition": None, "isx_transition_time": None,
+                    "execution_tag": None,
+                })
             _append_log(record)
             recent_ticks.append(record)
             if len(recent_ticks) > LATEST_WINDOW:
@@ -530,6 +575,24 @@ def _closed_market_record(block: int, now: float, symbol: str) -> dict:
         "fill": "-",
         "fill_qty": None,
         "fill_price": None,
+        "execution_tag": None,
+        "isx_setup_id": None,
+        "isx_phase": None,
+        "h4_direction": None,
+        "h1_direction": None,
+        "intent": None,
+        "ex": None,
+        "px": None,
+        "ep": None,
+        "s1_time": None,
+        "fib_retracement": None,
+        "aoi_qualified": False,
+        "s2_time": None,
+        "x_ready": False,
+        "invalidation_price": None,
+        "stand_down_reason": "market closed",
+        "isx_transition": None,
+        "isx_transition_time": None,
     }
 
 
@@ -552,6 +615,7 @@ def _execute_action(
     rest_counter,
     now,
     dry: bool = False,
+    execution_tag: str | None = None,
 ):
     """Runs the risk check, then places (or, if `dry` is true, only logs)
     the order implied by `action`. `dry` never calls cancel_all_orders,
@@ -580,6 +644,38 @@ def _execute_action(
 
     fill_txt = "-"
     line_action = action.kind
+
+    if action.kind == ISX_X:
+        side = "buy" if action.direction_leg == Direction.BULLISH.value else "sell"
+        if side == "sell" and not spec.shorting_allowed:
+            sellable = max(0.0, inv.inventory)
+            if sellable <= 0:
+                return "ISX-X (sell unavailable: no sellable inventory)", "-", None, None, resting_quotes, rest_counter
+        else:
+            sellable = None
+        qty = size_order(directional_notional, ask_px if side == "buy" else bid_px, spec)
+        if sellable is not None:
+            qty = min(qty, sellable)
+        if qty <= 0:
+            return "ISX-X (sell unavailable: zero quantity)", "-", None, None, resting_quotes, rest_counter
+        if dry:
+            return f"{execution_tag or 'ISX-X'} dry {side}", f"{execution_tag or 'ISX-X'} dry: would {side} {qty}", qty, ask_px if side == "buy" else bid_px, None, 0
+        try:
+            # Alpaca accepts a restricted client-order-id character set. Keep
+            # the human-readable tag in the dashboard/logs while using a
+            # broker-safe equivalent for the API request.
+            broker_order_id = execution_tag.replace(":", "-") if execution_tag else None
+            alpaca.submit_market_order(side, qty, client_order_id=broker_order_id)
+            inv.inventory += qty if side == "buy" else -qty
+            inv.fills += 1
+            inv.orders_submitted += 1
+            fill_px = ask_px if side == "buy" else bid_px
+            inv.entry_price = fill_px
+            fill = f"{execution_tag or 'ISX-X'} filled {qty} @ {fill_px:,.2f}"
+            return f"{execution_tag or 'ISX-X'} {side}", fill, qty, fill_px, None, 0
+        except (MarketClosedError, AlpacaAPIError) as exc:
+            inv.orders_rejected += 1
+            return f"{execution_tag or 'ISX-X'} rejected", f"{execution_tag or 'ISX-X'} rejected: {exc}", None, None, resting_quotes, rest_counter
 
     if action.kind in (PULL_QUOTES, STAND_DOWN):
         if resting_quotes and not dry:
@@ -737,6 +833,11 @@ def main(argv: list[str] | None = None) -> int:
         "--mock", action="store_true", help="force the mock decision client"
     )
     parser.add_argument(
+        "--isx",
+        action="store_true",
+        help="enable deterministic ISX Intent -> S1 -> AOI -> S2 -> X paper execution",
+    )
+    parser.add_argument(
         "--ticks",
         type=int,
         default=None,
@@ -765,6 +866,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    if args.isx and args.live:
+        print("ISX mode is paper-only and refuses live execution")
+        return 1
+
     ticks = None if (args.forever or args.ticks == 0) else args.ticks
 
     confirmation = None
@@ -790,6 +895,7 @@ def main(argv: list[str] | None = None) -> int:
         dry_execution=args.dry_execution,
         live=args.live,
         confirmation=confirmation,
+        isx=args.isx,
     )
 
 

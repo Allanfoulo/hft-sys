@@ -721,7 +721,8 @@
           `<span class=k>inv pressure</span><span><b>${t.inventory_pressure != null ? t.inventory_pressure.toFixed(2) : "—"}</b></span>` +
           `<span class=k>execution health</span><span><b>${t.execution_health != null ? t.execution_health.toFixed(2) : "—"}</b></span>` +
           `<span class=k>vwap</span><span><b>${t.vwap != null ? t.vwap.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</b></span>` +
-          `<span class=k>rung</span><span><b>${t.rung || "—"}</b></span>`;
+          `<span class=k>rung</span><span><b>${t.rung || "—"}</b></span>` +
+          `<span class=k>execution</span><span><b>${t.execution_tag || "legacy"}</b></span>`;
 
         const sideEl = $("side"),
           word = $("word");
@@ -773,7 +774,7 @@
         const fill = t.fill_qty
           ? `${t.fill_qty} @ ${t.fill_price ? t.fill_price.toLocaleString(undefined, { maximumFractionDigits: 1 }) : "—"}`
           : "—";
-        tr.innerHTML = `<td>${t.tick}</td><td class="a">${label}</td><td>${t.quote_environment_conf != null ? "conf " + t.quote_environment_conf.toFixed(2) : ""}</td><td>${t.latency_ms ? Math.round(t.latency_ms) + "ms" : "late"}</td><td>${fill}</td><td>paper</td>`;
+        tr.innerHTML = `<td>${t.tick}</td><td class="a">${label}</td><td>${t.execution_tag || (t.quote_environment_conf != null ? "conf " + t.quote_environment_conf.toFixed(2) : "")}</td><td>${t.latency_ms ? Math.round(t.latency_ms) + "ms" : "late"}</td><td>${fill}</td><td>paper</td>`;
         feed.prepend(tr);
         while (feed.children.length > 16) feed.lastChild.remove();
 

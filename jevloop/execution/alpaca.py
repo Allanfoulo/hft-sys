@@ -15,6 +15,7 @@ from __future__ import annotations
 import collections
 import os
 import time
+from datetime import datetime, timedelta, timezone
 
 try:
     import requests
@@ -23,7 +24,7 @@ except ImportError as exc:  # pragma: no cover
         "The 'requests' package is required. Run: uv pip install requests"
     ) from exc
 
-from ..assets import AssetSpec, resolve_symbol
+from ..assets import CRYPTO_DATA_BASE, EQUITY_DATA_BASE, AssetSpec, resolve_symbol
 
 PAPER_TRADING_BASE_URL = "https://paper-api.alpaca.markets"
 LIVE_TRADING_BASE_URL = "https://api.alpaca.markets"
@@ -236,7 +237,9 @@ class AlpacaPaperClient:
         }
         return self._request("POST", f"{self.base_url}/v2/orders", json=body)
 
-    def submit_market_order(self, side: str, qty: float) -> dict:
+    def submit_market_order(
+        self, side: str, qty: float, client_order_id: str | None = None
+    ) -> dict:
         if not self.spec.is_24_7 and not self.is_market_open():
             raise MarketClosedError(
                 f"{self.symbol} market is closed, refusing to submit an order"
@@ -248,6 +251,8 @@ class AlpacaPaperClient:
             "type": "market",
             "time_in_force": "gtc" if self.spec.asset_class == "crypto" else "day",
         }
+        if client_order_id:
+            body["client_order_id"] = client_order_id
         return self._request("POST", f"{self.base_url}/v2/orders", json=body)
 
     def cancel_order(self, order_id: str) -> None:
@@ -287,6 +292,30 @@ class AlpacaPaperClient:
             params={"symbols": self.symbol, "limit": limit},
         )
         return data.get("trades", {}).get(self.symbol, [])
+
+    def get_historical_bars(
+        self, timeframe: str, limit: int = 300, end: datetime | None = None
+    ) -> list:
+        """Return only completed OHLC bars for the ISX historical interface."""
+        from ..isx.models import Candle
+
+        tf_map = {"H4": ("4Hour", timedelta(hours=4)), "H1": ("1Hour", timedelta(hours=1)), "M15": ("15Min", timedelta(minutes=15))}
+        if timeframe not in tf_map:
+            raise ValueError(f"unsupported historical timeframe: {timeframe}")
+        api_tf, duration = tf_map[timeframe]
+        base = CRYPTO_DATA_BASE if self.spec.asset_class == "crypto" else EQUITY_DATA_BASE
+        params = {"symbols": self.symbol, "timeframe": api_tf, "limit": limit}
+        cutoff = end or datetime.now(timezone.utc)
+        params["end"] = cutoff.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        data = self._request("GET", f"{base}/bars", params=params)
+        raw_bars = data.get("bars", {}).get(self.symbol, [])
+        result = []
+        for raw in raw_bars:
+            stamp = datetime.fromisoformat(str(raw["t"]).replace("Z", "+00:00"))
+            complete = stamp + duration <= cutoff
+            if complete:
+                result.append(Candle(stamp, float(raw["o"]), float(raw["h"]), float(raw["l"]), float(raw["c"]), True))
+        return result
 
 
 def client_from_env(

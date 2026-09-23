@@ -17,6 +17,7 @@ uv run pytest -q             # tests, no network needed
 uv run python -m jevloop explain-split         # the split, as a table
 uv run python -m jevloop validate-symbol AAPL  # resolve any symbol first
 uv run python -m jevloop run --paper --ticks 30 --symbol BTC/USD
+uv run python -m jevloop run --paper --isx --ticks 30 --symbol BTC/USD
 uv run python -m jevloop serve   # open http://127.0.0.1:8765
 ```
 
@@ -27,6 +28,21 @@ quantity, so the same defaults work across assets.
 
 No `AI_GATEWAY_API_KEY` or `TYPESAFE_API_KEY`? The loop runs on a
 clearly-labelled mock decision client. It says so on the first line.
+
+## Deterministic ISX execution
+
+Pass `--isx` to enable the close-confirmed Intent -> S1 -> AOI -> S2 -> X
+state machine. H4 and H1 must agree before a setup exists; M15 supplies S1,
+the 61.8%-79.0% Fibonacci AOI, and the aligned S2. The engine consumes only
+completed historical candles through `jevloop/market_data.py`, never Jev
+answers, and every X permission is paper-only and risk-vetoed.
+
+ISX waiting states return `STAND_DOWN` and do not quote both sides. A single
+X execution is tagged `ISX-X:<setup-id>` in the JSONL log, dashboard feed,
+and Alpaca `client_order_id`, making it easy to distinguish from legacy
+directional entries. The dashboard payload includes the setup phase, frozen
+EX/PX/EP anchors, S1/S2 timestamps, AOI status, invalidation boundary, and
+the closed candle timestamp responsible for each transition.
 
 ## Running continuously
 

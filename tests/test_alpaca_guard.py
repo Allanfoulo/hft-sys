@@ -76,3 +76,17 @@ def test_crypto_never_checks_market_hours():
 
     result = crypto_client.submit_limit_order("buy", 0.001, 100.0)
     assert result == {"id": "fake-order"}
+
+
+def test_market_order_carries_execution_tag_to_alpaca():
+    client = AlpacaPaperClient(api_key="x", secret_key="y", spec=BTC_SPEC)
+    captured = {}
+
+    def _request(method, url, **kwargs):
+        captured.update(kwargs)
+        return {"id": "tagged-order"}
+
+    client._request = _request
+    result = client.submit_market_order("buy", 0.001, client_order_id="ISX-X-setup")
+    assert result == {"id": "tagged-order"}
+    assert captured["json"]["client_order_id"] == "ISX-X-setup"
