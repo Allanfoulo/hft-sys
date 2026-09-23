@@ -317,6 +317,36 @@ class AlpacaPaperClient:
                 result.append(Candle(stamp, float(raw["o"]), float(raw["h"]), float(raw["l"]), float(raw["c"]), True))
         return result
 
+    def get_historical_minute_bars(
+        self,
+        start_utc: datetime,
+        end_utc: datetime,
+        limit: int = 10000,
+        page_token: str | None = None,
+    ) -> tuple[list, str | None]:
+        """Read-only Alpaca crypto 1-minute bars for historical replay."""
+        from ..isx.models import Candle
+
+        if self.spec.asset_class != "crypto":
+            raise ValueError("Alpaca replay currently supports crypto pairs only")
+        params = {
+            "symbols": self.symbol,
+            "timeframe": "1Min",
+            "start": start_utc.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "end": end_utc.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "limit": min(max(int(limit), 1), 10000),
+            "sort": "asc",
+        }
+        if page_token:
+            params["page_token"] = page_token
+        data = self._request("GET", f"{CRYPTO_DATA_BASE}/bars", params=params)
+        bars = []
+        for raw in data.get("bars", {}).get(self.symbol, []):
+            stamp = datetime.fromisoformat(str(raw["t"]).replace("Z", "+00:00"))
+            if start_utc <= stamp < end_utc:
+                bars.append(Candle(stamp, float(raw["o"]), float(raw["h"]), float(raw["l"]), float(raw["c"]), True))
+        return bars, data.get("next_page_token")
+
 
 def client_from_env(
     symbol: str = "BTC/USD",

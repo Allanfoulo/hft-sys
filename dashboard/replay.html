@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ISX Replay</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Fragment+Mono&display=swap" rel="stylesheet" />
+  <style>
+    :root { --bg:#f5f5f7; --ink:#101116; --muted:#717684; --line:rgba(16,17,22,.12); --blue:#0a8cff; --green:#207a4f; --red:#b42318; --amber:#a56a12; --card:rgba(255,255,255,.78); --mono:"Fragment Mono",ui-monospace,monospace; --sans:"Instrument Sans",Arial,sans-serif; }
+    * { box-sizing:border-box } body { margin:0; min-height:100vh; background:radial-gradient(70% 80% at 10% 0%,#ffd5ec,transparent 60%),radial-gradient(65% 70% at 100% 0%,#d4eaff,transparent 58%),var(--bg); color:var(--ink); font-family:var(--sans); padding:24px; }
+    .shell { max-width:1500px; margin:auto; background:rgba(255,255,255,.5); border:1px solid rgba(255,255,255,.75); border-radius:22px; padding:24px; box-shadow:0 24px 70px rgba(20,20,40,.11); }
+    header { display:flex; align-items:center; gap:16px; margin-bottom:18px } h1 { margin:0; font-size:27px; letter-spacing:-.03em } h1 span { color:var(--blue) } .nav { margin-left:auto; font-family:var(--mono); font-size:12px } .nav a { color:#0763b8; text-decoration:none; }
+    .notice { background:#fff5d6; border:1px solid #ead493; color:#78540c; padding:11px 14px; border-radius:12px; font-family:var(--mono); font-size:12px; margin-bottom:18px; }
+    .workspace { display:grid; grid-template-columns:310px 1fr; gap:18px; align-items:start } .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:17px; } .card h2 { margin:0 0 14px; font-size:15px; } label { display:block; color:var(--muted); font-size:12px; margin:11px 0 5px; } input,select,button { width:100%; border:1px solid var(--line); border-radius:9px; padding:10px; font:12px var(--mono); background:rgba(255,255,255,.86); color:var(--ink); } button { margin-top:15px; background:var(--blue); color:#fff; border-color:transparent; cursor:pointer; font-family:var(--sans); font-weight:600; } button:disabled { opacity:.55; cursor:wait; } .fieldrow { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .settings { color:var(--muted); font-size:11px; line-height:1.5; margin-top:14px; } .error { color:var(--red); background:#fff0ef; border:1px solid #f1c5c1; border-radius:9px; padding:9px; margin-top:12px; display:none; font-size:12px; }
+    .main { min-width:0 } .summary { display:grid; grid-template-columns:repeat(6,1fr); gap:9px; margin-bottom:13px; } .metric { background:var(--card); border:1px solid var(--line); border-radius:13px; padding:11px; } .metric small { display:block; color:var(--muted); font-size:11px; } .metric b { display:block; font:20px var(--mono); margin-top:6px; } .metric b.pos { color:var(--green) } .metric b.neg { color:var(--red) }
+    .chart-card { margin-bottom:13px; } .chart-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:7px; } .chart-head h2 { margin:0; } .chart-head span { color:var(--muted); font:11px var(--mono); } svg { width:100%; height:180px; display:block; background:rgba(250,250,252,.65); border-radius:10px; } .empty { color:var(--muted); text-align:center; padding:65px 10px; font-family:var(--mono); font-size:12px; }
+    .lower { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(280px,1fr); gap:13px; } table { width:100%; border-collapse:collapse; font:11px var(--mono); } th { text-align:left; color:var(--muted); font-weight:400; padding:8px 6px; border-bottom:1px solid var(--line); } td { padding:9px 6px; border-bottom:1px solid rgba(16,17,22,.07); white-space:nowrap; } tbody tr { cursor:pointer; } tbody tr:hover,tbody tr.selected { background:#eaf4ff; } .tag { color:#0763b8; } .win { color:var(--green) } .loss { color:var(--red) } .open { color:var(--amber) } .table-wrap { overflow:auto; max-height:340px; }
+    .detail { min-height:340px; } .detail h2 { margin-bottom:4px; } .detail .sub { color:var(--muted); font:11px var(--mono); margin-bottom:14px; } .detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; } .kv { background:rgba(247,248,251,.8); border-radius:9px; padding:9px; } .kv small { display:block; color:var(--muted); font-size:10px; } .kv b { display:block; font:12px var(--mono); margin-top:4px; overflow-wrap:anywhere; } .events { margin-top:14px; } .event { display:flex; justify-content:space-between; gap:8px; border-top:1px solid var(--line); padding:8px 0; font:11px var(--mono); } .event span:first-child { color:var(--muted); } .run-meta { color:var(--muted); font:11px var(--mono); margin-top:10px; }
+    @media (max-width:1050px) { .workspace { grid-template-columns:1fr } .summary { grid-template-columns:repeat(3,1fr) } .lower { grid-template-columns:1fr } } @media (max-width:620px) { body { padding:10px } .shell { padding:14px } .summary { grid-template-columns:repeat(2,1fr) } header { align-items:flex-start; flex-direction:column } .nav { margin-left:0 } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header><h1>ISX <span>Replay</span></h1><div class="nav"><a href="index.html">live dashboard</a></div></header>
+    <div class="notice">1m-trigger-proxy · completed 1-minute historical bars · no exact tick or 5-second fill claim · replay never submits orders</div>
+    <div class="workspace">
+      <aside class="card">
+        <h2>Run and inspect</h2>
+        <label for="source">Data source</label><select id="source"><option value="fixture">Deterministic fixture · offline</option><option value="alpaca">Alpaca historical · crypto 1m</option></select>
+        <label for="symbol">Pair</label><input id="symbol" value="BTC/USD" />
+        <div class="fieldrow"><div><label for="start">Start UTC</label><input id="start" type="datetime-local" step="60" /></div><div><label for="end">End UTC</label><input id="end" type="datetime-local" step="60" /></div></div>
+        <div class="fieldrow"><div><label for="target">Target R</label><input id="target" type="number" min="0.1" step="0.1" value="4" /></div><div><label for="risk">Risk USD</label><input id="risk" type="number" min="1" step="1" value="100" /></div></div>
+        <div class="fieldrow"><div><label for="be">Break-even R</label><input id="be" type="number" min="0.1" step="0.1" value="1" /></div><div><label for="lock-trigger">Lock at R</label><input id="lock-trigger" type="number" min="0.1" step="0.1" value="2" /></div></div>
+        <label for="lock-to">Lock stop to R</label><input id="lock-to" type="number" min="0" step="0.1" value="1" />
+        <button id="run">Run replay</button><div id="error" class="error"></div>
+        <div class="settings">ISX sequence: 15m close-confirmed Intent → 1m S1 → 61.8–79.0% AOI → 1m S2/X. All timestamps and output dates are UTC.</div>
+      </aside>
+      <section class="main">
+        <div class="summary" id="summary"></div>
+        <div class="card chart-card"><div class="chart-head"><h2>Cumulative result</h2><span id="chart-label">No replay loaded</span></div><svg id="chart" viewBox="0 0 800 180" preserveAspectRatio="none"><text x="50%" y="50%" text-anchor="middle" fill="#717684" font-family="Fragment Mono" font-size="12">Run a replay to plot cumulative R</text></svg></div>
+        <div class="lower"><div class="card"><h2>Trade ledger</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Pair</th><th>Side</th><th>Entry UTC</th><th>Exit UTC</th><th>Result</th><th>R</th><th>P&amp;L</th><th>Execution tag</th></tr></thead><tbody id="ledger"><tr><td colspan="9" class="empty">No replay loaded</td></tr></tbody></table></div></div><div class="card detail" id="detail"><h2>Trade detail</h2><div class="sub">Click a ledger row to inspect the structure sequence and lifecycle.</div><div class="empty">Select a trade</div></div></div>
+      </section>
+    </div>
+    <div class="run-meta" id="run-meta"></div>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const esc = (value) => String(value ?? "—").replace(/[&<>"']/g, (ch) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;", "'":"&#39;"}[ch]));
+    const stamp = (value) => value ? new Date(value).toISOString().replace("T", " ").slice(0, 16) : "—";
+    function localUtcInput(date) { return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16); }
+    const now = new Date(); $("end").value = localUtcInput(now); $("start").value = localUtcInput(new Date(now.getTime() - 86400000));
+    function isoFromInput(value) { return new Date(value + ":00Z").toISOString(); }
+    function metric(label, value, cls="") { return `<div class="metric"><small>${label}</small><b class="${cls}">${esc(value)}</b></div>`; }
+    function renderSummary(summary) {
+      $("summary").innerHTML = metric("Sessions", summary.sessions) + metric("Trades", summary.trades) + metric("Wins", summary.wins, "pos") + metric("Losses", summary.losses, "neg") + metric("Total R", Number(summary.total_r || 0).toFixed(2), summary.total_r >= 0 ? "pos" : "neg") + metric("P&L USD", "$" + Number(summary.pnl_usd || 0).toFixed(2), summary.pnl_usd >= 0 ? "pos" : "neg");
+    }
+    function renderChart(points) {
+      const svg = $("chart"); if (!points.length) { svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#717684" font-family="Fragment Mono" font-size="12">No closed trades in this range</text>'; return; }
+      const values = points.map((p) => Number(p.r)), min = Math.min(0, ...values), max = Math.max(0, ...values), span = Math.max(0.01, max - min), w = 800, h = 180, pad = 18;
+      const xy = (value, index) => `${pad + index * (w - pad * 2) / Math.max(1, values.length - 1)},${h - pad - (value - min) * (h - pad * 2) / span}`;
+      const zeroY = h - pad - (0 - min) * (h - pad * 2) / span;
+      svg.innerHTML = `<line x1="${pad}" x2="${w-pad}" y1="${zeroY}" y2="${zeroY}" stroke="#c9ccd4" stroke-dasharray="3 4"/><polyline fill="none" stroke="#0a8cff" stroke-width="3" points="${values.map(xy).join(" ")}"/><circle cx="${xy(values.at(-1), values.length-1).split(",")[0]}" cy="${xy(values.at(-1), values.length-1).split(",")[1]}" r="5" fill="#0a8cff"/>`;
+    }
+    function renderLedger(trades) { $("ledger").innerHTML = trades.length ? trades.map((t, i) => `<tr data-index="${i}"><td>${esc(t.date)}</td><td>${esc(t.pair)}</td><td>${esc(t.side)}</td><td>${esc(stamp(t.entry_time_utc))}</td><td>${esc(stamp(t.exit_time_utc))}</td><td class="${t.result === "TARGET" ? "win" : t.result === "STOP" ? (Number(t.r_multiple || 0) > 0 ? "win" : "loss") : "open"}">${esc(t.result)}</td><td>${t.r_multiple == null ? "—" : Number(t.r_multiple).toFixed(2)}</td><td>${t.pnl_usd == null ? "—" : "$" + Number(t.pnl_usd).toFixed(2)}</td><td class="tag">${esc(t.execution_tag)}</td></tr>`).join("") : '<tr><td colspan="9" class="empty">No trades matched this range</td></tr>'; trades.forEach((_, i) => $("ledger").querySelector(`tr[data-index="${i}"]`)?.addEventListener("click", () => showDetail(trades[i], i))); }
+    function showDetail(t, index) { document.querySelectorAll("tbody tr").forEach((row) => row.classList.remove("selected")); $("ledger").querySelector(`tr[data-index="${index}"]`)?.classList.add("selected"); const events = (t.lifecycle || []).map((e) => `<div class="event"><span>${esc(stamp(e.timestamp_utc))} · ${esc(e.event)}</span><b>${e.price == null ? "—" : Number(e.price).toFixed(4)}</b></div>`).join(""); $("detail").innerHTML = `<h2>${esc(t.execution_tag)}</h2><div class="sub">${esc(t.trigger_proxy)} · ${esc(t.result)} · ${esc(t.setup_id)}</div><div class="detail-grid">${[["Intent", stamp(t.intent_time_utc)],["S1", stamp(t.s1_time_utc)],["AOI", stamp(t.aoi_time_utc)],["S2 / X", stamp(t.s2_time_utc)],["Entry", stamp(t.entry_time_utc)],["Entry price", Number(t.entry_price).toFixed(4)],["Stop", Number(t.stop_price).toFixed(4)],["Target", Number(t.target_price).toFixed(4)],["Exit", stamp(t.exit_time_utc)],["Exit price", t.exit_price == null ? "—" : Number(t.exit_price).toFixed(4)]].map(([k,v]) => `<div class="kv"><small>${k}</small><b>${esc(v)}</b></div>`).join("")}</div><div class="events"><h2>Lifecycle</h2>${events || '<div class="empty">No lifecycle events</div>'}</div>`; }
+    $("run").addEventListener("click", async () => { const button = $("run"), error = $("error"); error.style.display = "none"; button.disabled = true; button.textContent = "Running…"; try { const payload = { source: $("source").value, symbol: $("symbol").value, start_utc: isoFromInput($("start").value), end_utc: isoFromInput($("end").value), target_r: Number($("target").value), breakeven_r: Number($("be").value), profit_lock_trigger_r: Number($("lock-trigger").value), profit_lock_r: Number($("lock-to").value), risk_usd: Number($("risk").value) }; const response = await fetch("/api/replay", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) }); const body = await response.json(); if (!response.ok || !body.ok) throw new Error(body.error || "Replay failed"); const result = body.result; renderSummary(result.summary); renderChart(result.cumulative); renderLedger(result.trades); $("chart-label").textContent = `${result.bars.toLocaleString()} 1m bars · ${result.request.start_utc} → ${result.request.end_utc}`; $("run-meta").textContent = result.proxy_notice; } catch (err) { error.textContent = err.message; error.style.display = "block"; } finally { button.disabled = false; button.textContent = "Run replay"; } });
+  </script>
+</body>
+</html>

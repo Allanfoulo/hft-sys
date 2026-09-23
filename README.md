@@ -19,6 +19,7 @@ uv run python -m jevloop validate-symbol AAPL  # resolve any symbol first
 uv run python -m jevloop run --paper --ticks 30 --symbol BTC/USD
 uv run python -m jevloop run --paper --isx --ticks 30 --symbol BTC/USD
 uv run python -m jevloop serve   # open http://127.0.0.1:8765
+# then open http://127.0.0.1:8765/replay.html for the read-only ISX replay
 ```
 
 `--symbol` takes any crypto pair (24/7) or US equity ticker (market hours
@@ -43,6 +44,20 @@ and Alpaca `client_order_id`, making it easy to distinguish from legacy
 directional entries. The dashboard payload includes the setup phase, frozen
 EX/PX/EP anchors, S1/S2 timestamps, AOI status, invalidation boundary, and
 the closed candle timestamp responsible for each transition.
+
+## ISX historical replay
+
+Open `/replay.html` after starting `jevloop serve` for the read-only replay
+workspace. It supports UTC date ranges, deterministic offline fixtures, and
+Alpaca historical crypto 1-minute bars. The replay uses the same close-confirmed
+ISX structure primitives: 15-minute Intent, 1-minute S1, the 61.8%-79.0% AOI,
+and 1-minute S2/X. Historical X is labelled `1m-trigger-proxy`; it never claims
+an exact tick or 5-second fill and never submits an Alpaca order.
+
+Replay trades are tagged `ISX-REPLAY-<PAIR>-<SETUP>-<N>` and include entry/exit
+UTC, stop, default 4R target, +1R break-even, +2R to +1R profit lock, result,
+R multiple, P&L, and lifecycle events. Alpaca data is paginated server-side;
+credentials never enter the browser.
 
 ## Running continuously
 
