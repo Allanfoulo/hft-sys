@@ -16,6 +16,7 @@ import socketserver
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from .mt5_bridge import MT5BridgeService, MT5BridgeValidationError
 from .replay.service import (
     ReplayError,
     ReplayNotFoundError,
@@ -30,6 +31,8 @@ SKILL_DIR = Path(__file__).resolve().parent.parent
 DASHBOARD_DIR = SKILL_DIR / "dashboard"
 REPLAY_SERVICE = ReplayService()
 REPLAY_JOBS = ReplayJobManager(REPLAY_SERVICE)
+MT5_BRIDGE = MT5BridgeService()
+MT5_BRIDGE_TOKEN = os.environ.get("JEV_MT5_BRIDGE_TOKEN")
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -44,6 +47,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802
         parts = [part for part in urlsplit(self.path).path.split("/") if part]
+        if parts == ["api", "mt5", "status"]:
+            self._json(200, {"ok": True, "bridge": MT5_BRIDGE.status()})
+            return
         if len(parts) == 4 and parts[:3] == ["api", "replay", "jobs"]:
             job = REPLAY_JOBS.status(parts[3])
             if job is None:
@@ -66,6 +72,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         route = self.path.split("?", 1)[0]
+        if route == "/api/mt5/isx/decision":
+            if MT5_BRIDGE_TOKEN and self.headers.get("X-Jev-Bridge-Token") != MT5_BRIDGE_TOKEN:
+                self._json(401, {"ok": False, "error": "invalid MT5 bridge token"})
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length <= 0 or length > 1_000_000:
+                    raise MT5BridgeValidationError("request body must be between 1 byte and 1 MB")
+                payload = json.loads(self.rfile.read(length).decode("utf-8"))
+                if not isinstance(payload, dict):
+                    raise MT5BridgeValidationError("request body must be a JSON object")
+                self._json(200, MT5_BRIDGE.decide(payload))
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                self._json(400, {"ok": False, "error": f"invalid JSON body: {exc}"})
+            except MT5BridgeValidationError as exc:
+                self._json(400, {"ok": False, "error": str(exc)})
+            except Exception as exc:  # pragma: no cover - final HTTP safety net
+                self._json(500, {"ok": False, "error": f"MT5 bridge error: {exc}"})
+            return
         if route == "/api/replay/jobs":
             try:
                 length = int(self.headers.get("Content-Length", "0"))

@@ -88,6 +88,22 @@ before it exits rather than leaving them open. The dashboard (`jevloop
 serve`) keeps reading the same `~/.jev-loop/latest.json` regardless of
 whether the run is bounded or continuous.
 
+## MT5 hybrid bridge
+
+`jevloop serve` also exposes a read-only Python ISX decision bridge for the
+MetaTrader 5 Expert Advisor in `mt5/Experts/ISXBridge/`. The EA sends completed
+H4, H1, and M15 bars from the broker terminal and receives the same deterministic
+ISX phase, setup ID, execution tag, EX stop, and 4R target proposal. Python
+never submits MT5 orders; the EA owns the final local risk veto and defaults to
+shadow mode.
+
+Install and validate the EA from
+[`mt5/Experts/ISXBridge/README.md`](mt5/Experts/ISXBridge/README.md). The
+bridge endpoints are `POST /api/mt5/isx/decision` and `GET /api/mt5/status`.
+Set `JEV_MT5_BRIDGE_TOKEN` to require an `X-Jev-Bridge-Token` header. MT5
+history timestamps are broker-server timestamps, so set the EA's
+`InpBrokerUtcOffsetHours` before comparing them with the UTC dashboard.
+
 ## Your strategy lives in strategy.py
 
 Everything this loop ships with is a harness, not an edge: a generic
