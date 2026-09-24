@@ -14,8 +14,15 @@ import json
 import os
 import socketserver
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from .replay.service import ReplayError, ReplayProviderError, ReplayService, ReplayValidationError
+from .replay.service import (
+    ReplayError,
+    ReplayNotFoundError,
+    ReplayProviderError,
+    ReplayService,
+    ReplayValidationError,
+)
 
 LOG_DIR = Path(os.environ.get("JEV_LOOP_HOME", str(Path.home() / ".jev-loop")))
 SKILL_DIR = Path(__file__).resolve().parent.parent
@@ -32,6 +39,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
+
+    def do_GET(self):  # noqa: N802
+        parts = [part for part in urlsplit(self.path).path.split("/") if part]
+        if len(parts) == 6 and parts[:2] == ["api", "replay"] and parts[3] == "trades" and parts[5] == "chart":
+            try:
+                chart = REPLAY_SERVICE.trade_chart(parts[2], parts[4])
+                self._json(200, {"ok": True, "chart": chart})
+            except ReplayNotFoundError as exc:
+                self._json(404, {"ok": False, "error": str(exc)})
+            except ReplayValidationError as exc:
+                self._json(400, {"ok": False, "error": str(exc)})
+            except ReplayError as exc:
+                self._json(422, {"ok": False, "error": str(exc)})
+            return
+        super().do_GET()
 
     def do_POST(self):  # noqa: N802
         if self.path.split("?", 1)[0] != "/api/replay":

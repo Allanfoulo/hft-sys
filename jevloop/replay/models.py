@@ -28,6 +28,54 @@ class ReplaySide(str, Enum):
     SELL = "SELL"
 
 
+@dataclass(frozen=True)
+class ReplayChartBar:
+    """A completed OHLC bar exposed to the read-only chart replay."""
+
+    timestamp: datetime
+    timeframe: str
+    open: float
+    high: float
+    low: float
+    close: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "timestamp_utc": self.timestamp.isoformat().replace("+00:00", "Z"),
+            "timeframe": self.timeframe,
+            "open": self.open,
+            "high": self.high,
+            "low": self.low,
+            "close": self.close,
+        }
+
+
+@dataclass(frozen=True)
+class ReplayChartMarker:
+    timestamp: datetime
+    kind: str
+    label: str
+    price: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "timestamp_utc": self.timestamp.isoformat().replace("+00:00", "Z"),
+            "kind": self.kind,
+            "label": self.label,
+            "price": self.price,
+        }
+
+
+@dataclass(frozen=True)
+class ReplayChartLevel:
+    name: str
+    price: float
+    role: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"name": self.name, "price": self.price, "role": self.role}
+
+
 def _utc_datetime(value: Any, name: str) -> datetime:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{name} must be an ISO-8601 UTC timestamp")
@@ -177,6 +225,9 @@ class ReplayTrade:
     breakeven_moved: bool = False
     profit_locked: bool = False
     lifecycle: list[ReplayLifecycleEvent] = field(default_factory=list)
+    ex_price: float | None = None
+    px_price: float | None = None
+    ep_price: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         stamp = lambda value: value.isoformat().replace("+00:00", "Z") if value else None
@@ -203,6 +254,9 @@ class ReplayTrade:
             "r_multiple": self.r_multiple,
             "pnl_usd": self.pnl_usd,
             "active_stop": self.active_stop,
+            "ex_price": self.ex_price,
+            "px_price": self.px_price,
+            "ep_price": self.ep_price,
             "lifecycle": [event.to_dict() for event in self.lifecycle],
         }
 
@@ -236,6 +290,7 @@ class ReplayResult:
     trades: list[ReplayTrade]
     cumulative: list[dict[str, Any]]
     bars: int
+    run_id: str = ""
     proxy_notice: str = (
         "Historical execution uses a completed 1-minute trigger proxy and does "
         "not claim exact tick or 5-second fills."
@@ -248,5 +303,6 @@ class ReplayResult:
             "trades": [trade.to_dict() for trade in self.trades],
             "cumulative": self.cumulative,
             "bars": self.bars,
+            "run_id": self.run_id,
             "proxy_notice": self.proxy_notice,
         }

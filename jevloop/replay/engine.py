@@ -235,6 +235,9 @@ class ReplayEngine:
             stop_price=stop,
             target_price=target,
             active_stop=stop,
+            ex_price=setup.anchors.ex,
+            px_price=setup.anchors.px,
+            ep_price=setup.anchors.ep,
         )
         trade.lifecycle.append(
             ReplayLifecycleEvent(bar.timestamp, "ENTRY", entry, stop, target)

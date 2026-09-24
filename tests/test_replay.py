@@ -12,7 +12,12 @@ from jevloop.replay.models import (
     ReplaySide,
     ReplayTrade,
 )
-from jevloop.replay.service import ReplayProviderError, ReplayService, ReplayValidationError
+from jevloop.replay.service import (
+    ReplayNotFoundError,
+    ReplayProviderError,
+    ReplayService,
+    ReplayValidationError,
+)
 
 
 UTC = timezone.utc
@@ -59,6 +64,45 @@ def test_fixture_replay_is_deterministic_and_tagged():
         "PROFIT_LOCK",
         "TARGET",
     ]
+    assert first.run_id == second.run_id
+    assert trade.ex_price is not None
+    assert trade.px_price is not None
+    assert trade.ep_price is not None
+
+
+def test_trade_chart_reuses_completed_ohlc_and_marks_isx_sequence():
+    service = ReplayService()
+    result = service.run(request().to_dict())
+    trade = result.trades[0]
+    chart = service.trade_chart(result.run_id, trade.trade_id)
+
+    assert chart["candles"]["1m"]
+    assert chart["candles"]["15m"]
+    assert chart["window_start_utc"].endswith("Z")
+    assert chart["window_end_utc"].endswith("Z")
+    assert [marker["kind"] for marker in chart["markers"][:5]] == [
+        "intent",
+        "s1",
+        "aoi",
+        "s2",
+        "x",
+    ]
+    assert {level["role"] for level in chart["levels"]} == {
+        "invalidation",
+        "internal",
+        "expansion",
+        "target",
+    }
+    assert chart["aoi"]["fib_low"] == pytest.approx(0.618)
+    assert chart["aoi"]["fib_high"] == pytest.approx(0.790)
+
+
+def test_trade_chart_is_lazy_and_unknown_runs_are_rejected():
+    service = ReplayService()
+    result = service.run(request().to_dict())
+    assert result.to_dict()["run_id"] == result.run_id
+    with pytest.raises(ReplayNotFoundError, match="expired"):
+        service.trade_chart("missing-run", result.trades[0].trade_id)
 
 
 def test_replay_can_return_open_outcomes_at_range_end():
