@@ -80,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
 
     with socketserver.TCPServer(("127.0.0.1", args.port), Handler) as httpd:
         print(f"dashboard: http://127.0.0.1:{args.port}/index.html")
-        print(f"ISX replay: http://127.0.0.1:{args.port}/replay.html")
+        print(f"ISX replay: http://127.0.0.1:{args.port}/isx-replay.html")
         print(f"dark wall: http://127.0.0.1:{args.port}/wall.html")
         print(f"raw feed:  http://127.0.0.1:{args.port}/latest.json")
         print("Ctrl+C to stop.")

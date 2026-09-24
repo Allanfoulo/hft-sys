@@ -19,7 +19,7 @@ uv run python -m jevloop validate-symbol AAPL  # resolve any symbol first
 uv run python -m jevloop run --paper --ticks 30 --symbol BTC/USD
 uv run python -m jevloop run --paper --isx --ticks 30 --symbol BTC/USD
 uv run python -m jevloop serve   # open http://127.0.0.1:8765
-# then open http://127.0.0.1:8765/replay.html for the read-only ISX replay
+# then open http://127.0.0.1:8765/isx-replay.html for the read-only ISX replay
 ```
 
 `--symbol` takes any crypto pair (24/7) or US equity ticker (market hours
@@ -47,7 +47,7 @@ the closed candle timestamp responsible for each transition.
 
 ## ISX historical replay
 
-Open `/replay.html` after starting `jevloop serve` for the read-only replay
+Open `/isx-replay.html` after starting `jevloop serve` for the read-only ISX replay
 workspace. It supports UTC date ranges, deterministic offline fixtures, and
 Alpaca historical crypto 1-minute bars. The replay uses the same close-confirmed
 ISX structure primitives: 15-minute Intent, 1-minute S1, the 61.8%-79.0% AOI,
