@@ -93,11 +93,31 @@
     .event { display:flex; justify-content:space-between; gap:8px; border-top:1px solid var(--hair); padding:8px 0; font:11px var(--mono); }
     .event span:first-child { color:var(--muted); }
     .run-meta { color:var(--muted); font:11px var(--mono); margin-top:10px; }
+    .run-toast { position:fixed; z-index:20; right:24px; bottom:24px; width:min(380px,calc(100vw - 32px)); padding:15px 16px; background:rgba(255,255,255,.9); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); border:1px solid var(--hair2); border-radius:14px; box-shadow:0 18px 50px rgba(11,11,16,.16); }
+    .run-toast[hidden] { display:none; }
+    .toast-head { display:flex; align-items:center; gap:9px; }
+    .toast-dot { width:8px; height:8px; flex:0 0 8px; border-radius:50%; background:var(--blue); }
+    .run-toast[data-state="running"] .toast-dot { animation:toast-pulse 1.2s infinite; }
+    .run-toast[data-state="complete"] .toast-dot { background:var(--green); }
+    .run-toast[data-state="stalled"] .toast-dot { background:var(--amber); }
+    .run-toast[data-state="error"] .toast-dot { background:var(--red); }
+    @keyframes toast-pulse { 0%,100% { opacity:1; } 50% { opacity:.35; } }
+    .toast-head strong { font-size:13px; font-weight:600; }
+    .toast-message { margin:8px 0 11px 17px; color:var(--ink3); font:11px/1.45 var(--mono); }
+    .toast-progress { height:7px; margin-left:17px; overflow:hidden; border-radius:999px; background:rgba(11,11,16,.08); }
+    .toast-progress span { display:block; width:0; height:100%; border-radius:999px; background:var(--blue); transition:width .25s ease; }
+    .run-toast[data-state="complete"] .toast-progress span { background:var(--green); }
+    .run-toast[data-state="stalled"] .toast-progress span { background:var(--amber); }
+    .run-toast[data-state="error"] .toast-progress span { background:var(--red); }
+    .toast-progress span.indeterminate { width:38%; animation:toast-slide 1.3s ease-in-out infinite; }
+    @keyframes toast-slide { 0% { transform:translateX(-110%); } 100% { transform:translateX(290%); } }
+    .toast-meta { display:flex; justify-content:space-between; gap:10px; margin:8px 0 0 17px; color:var(--muted); font:10px var(--mono); }
     @media (max-width:1050px) { .control-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .lower { grid-template-columns:1fr; } }
-    @media (max-width:620px) { body { padding:10px; } .frame { min-height:calc(100vh - 20px); padding:16px; } header { align-items:flex-start; flex-direction:column; } .pills { margin-left:0; flex-wrap:wrap; } .hero { padding:34px 0 22px; } .hero h1 { font-size:34px; } .hero p { font-size:16px; } .control-grid { grid-template-columns:1fr; } .control-grid .wide { grid-column:auto; } .control-actions { align-items:stretch; flex-direction:column; } button { width:100%; } .summary { grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 8px; } .metric:nth-child(5),.metric:nth-child(6) { grid-column:span 2; } .chart-head { align-items:flex-start; flex-direction:column; } }
+    @media (max-width:620px) { body { padding:10px; } .frame { min-height:calc(100vh - 20px); padding:16px; } header { align-items:flex-start; flex-direction:column; } .pills { margin-left:0; flex-wrap:wrap; } .hero { padding:34px 0 22px; } .hero h1 { font-size:34px; } .hero p { font-size:16px; } .control-grid { grid-template-columns:1fr; } .control-grid .wide { grid-column:auto; } .control-actions { align-items:stretch; flex-direction:column; } button { width:100%; } .summary { grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 8px; } .metric:nth-child(5),.metric:nth-child(6) { grid-column:span 2; } .chart-head { align-items:flex-start; flex-direction:column; } .run-toast { right:16px; bottom:16px; } }
   </style>
 </head>
 <body>
+  <div class="run-toast" id="run-toast" data-state="running" role="status" aria-live="polite" hidden><div class="toast-head"><span class="toast-dot"></span><strong id="toast-title">Replay queued</strong></div><div class="toast-message" id="toast-message">Waiting for the replay worker…</div><div class="toast-progress"><span id="toast-progress-bar"></span></div><div class="toast-meta"><span id="toast-progress-text">Waiting</span><span id="toast-heartbeat">—</span></div></div>
   <main class="frame">
     <header>
       <div class="brand"><b>ISX</b><i>Replay lab</i></div>
@@ -179,8 +199,74 @@
     async function loadTradeChart(trade) { clearTradeChart("Loading completed OHLC candles and ISX annotations…"); const requestId = chartRequestId; $("trade-chart-title").textContent = trade.execution_tag; if (!latestResult || !latestResult.run_id) { clearTradeChart("Run the replay again to enable candle detail."); return; } try { const response = await fetch(`/api/replay/${encodeURIComponent(latestResult.run_id)}/trades/${encodeURIComponent(trade.trade_id)}/chart`, { cache:"no-store" }); const body = await response.json(); if (requestId !== chartRequestId) return; if (!response.ok || !body.ok) throw new Error(body.error || "Trade chart unavailable"); selectedTradeChart = body.chart; drawTradeChart(); } catch (err) { if (requestId !== chartRequestId) return; const message = err instanceof TypeError && err.message === "Failed to fetch" ? "Replay server unavailable at 127.0.0.1:8765. Restart jevloop serve, then run the replay again." : err.message; clearTradeChart(message); $("trade-chart-title").textContent = trade.execution_tag; } }
     function renderLedger(trades) { $("ledger").innerHTML = trades.length ? trades.map((t, i) => `<tr data-index="${i}"><td>${esc(t.date)}</td><td>${esc(t.pair)}</td><td>${esc(t.side)}</td><td>${esc(stamp(t.entry_time_utc))}</td><td>${esc(stamp(t.exit_time_utc))}</td><td class="${t.result === "TARGET" ? "win" : t.result === "STOP" ? (Number(t.r_multiple || 0) > 0 ? "win" : "loss") : "open"}">${esc(t.result)}</td><td>${t.r_multiple == null ? "—" : Number(t.r_multiple).toFixed(2)}</td><td>${t.pnl_usd == null ? "—" : "$" + Number(t.pnl_usd).toFixed(2)}</td><td class="tag">${esc(t.execution_tag)}</td></tr>`).join("") : '<tr><td colspan="9" class="empty">No trades matched this range</td></tr>'; trades.forEach((_, i) => $("ledger").querySelector(`tr[data-index="${i}"]`)?.addEventListener("click", () => showDetail(trades[i], i))); }
     function showDetail(t, index) { document.querySelectorAll("tbody tr").forEach((row) => row.classList.remove("selected")); $("ledger").querySelector(`tr[data-index="${index}"]`)?.classList.add("selected"); const events = (t.lifecycle || []).map((e) => `<div class="event"><span>${esc(stamp(e.timestamp_utc))} · ${esc(e.event)}</span><b>${e.price == null ? "—" : Number(e.price).toFixed(4)}</b></div>`).join(""); $("detail").innerHTML = `<h2>${esc(t.execution_tag)}</h2><div class="sub">${esc(t.trigger_proxy)} · ${esc(t.result)} · ${esc(t.setup_id)}</div><div class="detail-grid">${[["Intent", stamp(t.intent_time_utc)],["S1", stamp(t.s1_time_utc)],["AOI", stamp(t.aoi_time_utc)],["S2 / X", stamp(t.s2_time_utc)],["Entry", stamp(t.entry_time_utc)],["Entry price", Number(t.entry_price).toFixed(4)],["Stop", Number(t.stop_price).toFixed(4)],["Target", Number(t.target_price).toFixed(4)],["Exit", stamp(t.exit_time_utc)],["Exit price", t.exit_price == null ? "—" : Number(t.exit_price).toFixed(4)]].map(([k,v]) => `<div class="kv"><small>${k}</small><b>${esc(v)}</b></div>`).join("")}</div><div class="events"><h2>Lifecycle</h2>${events || '<div class="empty">No lifecycle events</div>'}</div>`; loadTradeChart(t); }
+    let activeJobId = null;
+    let pollTimer = null;
+    function stopPolling() { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; } }
+    function setToast(state, title, message, progress, meta) {
+      const toast = $("run-toast"), bar = $("toast-progress-bar");
+      toast.hidden = false; toast.dataset.state = state;
+      $("toast-title").textContent = title; $("toast-message").textContent = message;
+      $("toast-progress-text").textContent = progress == null ? "Progress pending" : `${Math.round(progress * 100)}% complete`;
+      $("toast-heartbeat").textContent = meta || "—";
+      bar.classList.toggle("indeterminate", progress == null && (state === "running" || state === "stalled"));
+      bar.style.width = progress == null ? "38%" : `${Math.max(0, Math.min(1, progress)) * 100}%`;
+    }
+    function renderJob(job) {
+      const total = Number(job.total), processed = Number(job.processed || 0), knownTotal = Number.isFinite(total) && total > 0;
+      const parsedUpdated = job.updated_at_utc ? Date.parse(job.updated_at_utc) : NaN;
+      const age = Number.isFinite(parsedUpdated) ? Math.max(0, Math.round((Date.now() - parsedUpdated) / 1000)) : 0;
+      let state = job.status === "complete" ? "complete" : job.status === "failed" ? "error" : "running";
+      let message = job.message || "Replay is running";
+      if (state === "running" && age >= 8) { state = age >= 30 ? "stalled" : "running"; message = `No progress heartbeat for ${age}s · ${job.stage || "working"}`; }
+      const progress = knownTotal ? Math.max(0, Math.min(1, processed / total)) : null;
+      const meta = knownTotal ? `${processed.toLocaleString()} / ${total.toLocaleString()} bars` : (job.stage === "fetching" ? "fetching historical bars" : job.stage || "queued");
+      setToast(state, state === "complete" ? "Replay complete" : state === "error" ? "Replay stopped" : state === "stalled" ? "Replay may be stalled" : "Replay running", message, progress, `${meta} · heartbeat ${age}s ago`);
+    }
+    function renderReplayResult(result) {
+      latestResult = result; clearTradeChart(); renderSummary(result.summary); renderChart(result.cumulative); renderLedger(result.trades);
+      $("chart-label").textContent = `${result.bars.toLocaleString()} 1m bars · ${result.request.start_utc} → ${result.request.end_utc}`;
+      $("run-meta").textContent = result.proxy_notice;
+    }
+    async function pollReplayJob(jobId) {
+      try {
+        const response = await fetch(`/api/replay/jobs/${encodeURIComponent(jobId)}`, { cache:"no-store" });
+        let body = null; try { body = await response.json(); } catch (_) { body = {}; }
+        if (activeJobId !== jobId) return;
+        if (!response.ok || !body.ok) throw new Error(body.error || "Replay status unavailable");
+        const job = body.job; renderJob(job);
+        if (job.status === "complete") {
+          stopPolling(); activeJobId = null; if (job.result) renderReplayResult(job.result);
+          $("run").disabled = false; $("run").textContent = "Run replay"; return;
+        }
+        if (job.status === "failed") {
+          stopPolling(); activeJobId = null; $("error").textContent = job.error || job.message || "Replay failed"; $("error").style.display = "block";
+          $("run").disabled = false; $("run").textContent = "Run replay"; return;
+        }
+        pollTimer = setTimeout(() => pollReplayJob(jobId), 750);
+      } catch (err) {
+        if (activeJobId !== jobId) return;
+        if (err instanceof TypeError && err.message === "Failed to fetch") {
+          setToast("stalled", "Replay status unavailable", "The replay server connection dropped; retrying status…", null, "retrying in 2s");
+          pollTimer = setTimeout(() => pollReplayJob(jobId), 2000); return;
+        }
+        stopPolling(); activeJobId = null; $("error").textContent = err.message; $("error").style.display = "block";
+        setToast("error", "Replay stopped", err.message, null, "no further updates"); $("run").disabled = false; $("run").textContent = "Run replay";
+      }
+    }
     $("chart-timeframe").addEventListener("change", drawTradeChart);
-    $("run").addEventListener("click", async () => { const button = $("run"), error = $("error"); error.style.display = "none"; button.disabled = true; button.textContent = "Running…"; try { const payload = { source: $("source").value, symbol: $("symbol").value, start_utc: isoFromInput($("start").value), end_utc: isoFromInput($("end").value), target_r: Number($("target").value), breakeven_r: Number($("be").value), profit_lock_trigger_r: Number($("lock-trigger").value), profit_lock_r: Number($("lock-to").value), risk_usd: Number($("risk").value) }; const response = await fetch("/api/replay", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) }); const body = await response.json(); if (!response.ok || !body.ok) throw new Error(body.error || "Replay failed"); const result = body.result; latestResult = result; clearTradeChart(); renderSummary(result.summary); renderChart(result.cumulative); renderLedger(result.trades); $("chart-label").textContent = `${result.bars.toLocaleString()} 1m bars · ${result.request.start_utc} → ${result.request.end_utc}`; $("run-meta").textContent = result.proxy_notice; } catch (err) { error.textContent = err.message; error.style.display = "block"; } finally { button.disabled = false; button.textContent = "Run replay"; } });
-  </script>
+    $("run").addEventListener("click", async () => {
+      const button = $("run"), error = $("error"); stopPolling(); activeJobId = null; error.style.display = "none"; button.disabled = true; button.textContent = "Starting…";
+      latestResult = null; clearTradeChart(); setToast("running", "Replay starting", "Submitting a background job…", null, "waiting for heartbeat");
+      try {
+        const payload = { source: $("source").value, symbol: $("symbol").value, start_utc: isoFromInput($("start").value), end_utc: isoFromInput($("end").value), target_r: Number($("target").value), breakeven_r: Number($("be").value), profit_lock_trigger_r: Number($("lock-trigger").value), profit_lock_r: Number($("lock-to").value), risk_usd: Number($("risk").value) };
+        const response = await fetch("/api/replay/jobs", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) });
+        let body = null; try { body = await response.json(); } catch (_) { body = {}; }
+        if (!response.ok || !body.ok || !body.job?.job_id) throw new Error(body.error || "Replay could not be started");
+        activeJobId = body.job.job_id; renderJob(body.job); button.textContent = "Running…"; pollReplayJob(activeJobId);
+      } catch (err) {
+        const message = err instanceof TypeError && err.message === "Failed to fetch" ? "Replay server unavailable at 127.0.0.1:8765. Restart jevloop serve, then run the replay again." : err.message;
+        error.textContent = message; error.style.display = "block"; setToast("error", "Replay could not start", message, null, "no job created"); button.disabled = false; button.textContent = "Run replay";
+      }
+    });  </script>
 </body>
 </html>

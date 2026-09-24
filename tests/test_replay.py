@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import time
 
 import pytest
 
@@ -15,6 +16,7 @@ from jevloop.replay.models import (
 from jevloop.replay.service import (
     ReplayNotFoundError,
     ReplayProviderError,
+    ReplayJobManager,
     ReplayService,
     ReplayValidationError,
 )
@@ -68,6 +70,33 @@ def test_fixture_replay_is_deterministic_and_tagged():
     assert trade.ex_price is not None
     assert trade.px_price is not None
     assert trade.ep_price is not None
+
+
+def test_replay_reports_progress_stages_and_completion():
+    events = []
+    ReplayService().run(request().to_dict(), progress=events.append)
+
+    assert events[0]["stage"] == "validating"
+    assert any(event["stage"] == "fetching" for event in events)
+    replay_events = [event for event in events if event["stage"] == "replaying"]
+    assert replay_events
+    assert replay_events[-1]["processed"] == replay_events[-1]["total"]
+    assert events[-1]["stage"] == "complete"
+
+
+def test_replay_job_manager_reports_background_completion():
+    manager = ReplayJobManager(ReplayService())
+    started = manager.start(request().to_dict())
+    deadline = time.monotonic() + 2
+    status = manager.status(started["job_id"])
+    while status and status["status"] not in {"complete", "failed"} and time.monotonic() < deadline:
+        time.sleep(0.01)
+        status = manager.status(started["job_id"])
+
+    assert status is not None
+    assert status["status"] == "complete"
+    assert status["progress"] == 1.0
+    assert status["result"]["run_id"]
 
 
 def test_trade_chart_reuses_completed_ohlc_and_marks_isx_sequence():

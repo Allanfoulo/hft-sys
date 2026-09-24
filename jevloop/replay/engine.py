@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Sequence
+from typing import Callable, Sequence
 
 from ..isx.models import Candle, Direction, ISXPhase, RangeAnchors
 from ..isx.structure import (
@@ -52,20 +52,42 @@ class ReplayEngine:
         self.pivot_left = pivot_left
         self.pivot_right = pivot_right
 
-    def replay(self, minute_bars: Sequence[Candle], request: ReplayRequest) -> ReplayResult:
+    def replay(
+        self,
+        minute_bars: Sequence[Candle],
+        request: ReplayRequest,
+        progress: Callable[[dict], None] | None = None,
+    ) -> ReplayResult:
         bars = [
             bar
             for bar in completed_candles(minute_bars)
             if request.start_utc <= bar.timestamp < request.end_utc
         ]
         all_fifteen = aggregate_15m(bars)
+        if progress:
+            progress({
+                "stage": "replaying",
+                "processed": 0,
+                "total": len(bars),
+                "current_time_utc": None,
+                "message": "Replaying completed 1-minute bars",
+            })
         trades: list[ReplayTrade] = []
         setup: _Setup | None = None
         open_trade: ReplayTrade | None = None
         trade_number = 0
         fifteen_cursor = 0
 
+        progress_interval = max(1, len(bars) // 100)
         for index, bar in enumerate(bars):
+            if progress and (index == 0 or index == len(bars) - 1 or index % progress_interval == 0):
+                progress({
+                    "stage": "replaying",
+                    "processed": index + 1,
+                    "total": len(bars),
+                    "current_time_utc": bar.timestamp.isoformat().replace("+00:00", "Z"),
+                    "message": "Replaying completed 1-minute bars",
+                })
             if open_trade is not None:
                 if index > self._entry_index(open_trade, bars):
                     if self._advance_trade(open_trade, bar, request):

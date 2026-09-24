@@ -20,6 +20,7 @@ from .replay.service import (
     ReplayError,
     ReplayNotFoundError,
     ReplayProviderError,
+    ReplayJobManager,
     ReplayService,
     ReplayValidationError,
 )
@@ -28,6 +29,7 @@ LOG_DIR = Path(os.environ.get("JEV_LOOP_HOME", str(Path.home() / ".jev-loop")))
 SKILL_DIR = Path(__file__).resolve().parent.parent
 DASHBOARD_DIR = SKILL_DIR / "dashboard"
 REPLAY_SERVICE = ReplayService()
+REPLAY_JOBS = ReplayJobManager(REPLAY_SERVICE)
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -42,6 +44,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802
         parts = [part for part in urlsplit(self.path).path.split("/") if part]
+        if len(parts) == 4 and parts[:3] == ["api", "replay", "jobs"]:
+            job = REPLAY_JOBS.status(parts[3])
+            if job is None:
+                self._json(404, {"ok": False, "error": "replay job was not found"})
+            else:
+                self._json(200, {"ok": True, "job": job})
+            return
         if len(parts) == 6 and parts[:2] == ["api", "replay"] and parts[3] == "trades" and parts[5] == "chart":
             try:
                 chart = REPLAY_SERVICE.trade_chart(parts[2], parts[4])
@@ -56,7 +65,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self):  # noqa: N802
-        if self.path.split("?", 1)[0] != "/api/replay":
+        route = self.path.split("?", 1)[0]
+        if route == "/api/replay/jobs":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length <= 0 or length > 1_000_000:
+                    raise ReplayValidationError("request body must be between 1 byte and 1 MB")
+                payload = json.loads(self.rfile.read(length).decode("utf-8"))
+                job = REPLAY_JOBS.start(payload)
+                self._json(202, {"ok": True, "job": job})
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                self._json(400, {"ok": False, "error": f"invalid JSON body: {exc}"})
+            except ReplayValidationError as exc:
+                self._json(400, {"ok": False, "error": str(exc)})
+            return
+        if route != "/api/replay":
             self._json(404, {"error": "unknown API route"})
             return
         try:
@@ -100,7 +123,11 @@ def main(argv: list[str] | None = None) -> int:
     if not latest.exists():
         latest.write_text('{"ticks": [], "stats": {}}')
 
-    with socketserver.TCPServer(("127.0.0.1", args.port), Handler) as httpd:
+    class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+        allow_reuse_address = True
+        daemon_threads = True
+
+    with ThreadingTCPServer(("127.0.0.1", args.port), Handler) as httpd:
         print(f"dashboard: http://127.0.0.1:{args.port}/index.html")
         print(f"ISX replay: http://127.0.0.1:{args.port}/isx-replay.html")
         print(f"dark wall: http://127.0.0.1:{args.port}/wall.html")
