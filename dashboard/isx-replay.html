@@ -3,45 +3,121 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ISX Replay</title>
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Fragment+Mono&display=swap" rel="stylesheet" />
+  <title>ISX · Replay lab</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Fragment+Mono&family=Instrument+Serif:ital@1&display=swap" rel="stylesheet" />
   <style>
-    :root { --bg:#f5f5f7; --ink:#101116; --muted:#717684; --line:rgba(16,17,22,.12); --blue:#0a8cff; --green:#207a4f; --red:#b42318; --amber:#a56a12; --card:rgba(255,255,255,.78); --mono:"Fragment Mono",ui-monospace,monospace; --sans:"Instrument Sans",Arial,sans-serif; }
-    * { box-sizing:border-box } body { margin:0; min-height:100vh; background:radial-gradient(70% 80% at 10% 0%,#ffd5ec,transparent 60%),radial-gradient(65% 70% at 100% 0%,#d4eaff,transparent 58%),var(--bg); color:var(--ink); font-family:var(--sans); padding:24px; }
-    .shell { max-width:1500px; margin:auto; background:rgba(255,255,255,.5); border:1px solid rgba(255,255,255,.75); border-radius:22px; padding:24px; box-shadow:0 24px 70px rgba(20,20,40,.11); }
-    header { display:flex; align-items:center; gap:16px; margin-bottom:18px } h1 { margin:0; font-size:27px; letter-spacing:-.03em } h1 span { color:var(--blue) } .nav { margin-left:auto; font-family:var(--mono); font-size:12px } .nav a { color:#0763b8; text-decoration:none; }
-    .notice { background:#fff5d6; border:1px solid #ead493; color:#78540c; padding:11px 14px; border-radius:12px; font-family:var(--mono); font-size:12px; margin-bottom:18px; }
-    .workspace { display:grid; grid-template-columns:310px 1fr; gap:18px; align-items:start } .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:17px; } .card h2 { margin:0 0 14px; font-size:15px; } label { display:block; color:var(--muted); font-size:12px; margin:11px 0 5px; } input,select,button { width:100%; border:1px solid var(--line); border-radius:9px; padding:10px; font:12px var(--mono); background:rgba(255,255,255,.86); color:var(--ink); } button { margin-top:15px; background:var(--blue); color:#fff; border-color:transparent; cursor:pointer; font-family:var(--sans); font-weight:600; } button:disabled { opacity:.55; cursor:wait; } .fieldrow { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-    .settings { color:var(--muted); font-size:11px; line-height:1.5; margin-top:14px; } .error { color:var(--red); background:#fff0ef; border:1px solid #f1c5c1; border-radius:9px; padding:9px; margin-top:12px; display:none; font-size:12px; }
-    .main { min-width:0 } .summary { display:grid; grid-template-columns:repeat(6,1fr); gap:9px; margin-bottom:13px; } .metric { background:var(--card); border:1px solid var(--line); border-radius:13px; padding:11px; } .metric small { display:block; color:var(--muted); font-size:11px; } .metric b { display:block; font:20px var(--mono); margin-top:6px; } .metric b.pos { color:var(--green) } .metric b.neg { color:var(--red) }
-    .chart-card { margin-bottom:13px; } .chart-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:7px; } .chart-head h2 { margin:0; } .chart-head span { color:var(--muted); font:11px var(--mono); } svg { width:100%; height:180px; display:block; background:rgba(250,250,252,.65); border-radius:10px; } .empty { color:var(--muted); text-align:center; padding:65px 10px; font-family:var(--mono); font-size:12px; }
-    .lower { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(280px,1fr); gap:13px; } table { width:100%; border-collapse:collapse; font:11px var(--mono); } th { text-align:left; color:var(--muted); font-weight:400; padding:8px 6px; border-bottom:1px solid var(--line); } td { padding:9px 6px; border-bottom:1px solid rgba(16,17,22,.07); white-space:nowrap; } tbody tr { cursor:pointer; } tbody tr:hover,tbody tr.selected { background:#eaf4ff; } .tag { color:#0763b8; } .win { color:var(--green) } .loss { color:var(--red) } .open { color:var(--amber) } .table-wrap { overflow:auto; max-height:340px; }
-    .detail { min-height:340px; } .detail h2 { margin-bottom:4px; } .detail .sub { color:var(--muted); font:11px var(--mono); margin-bottom:14px; } .detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; } .kv { background:rgba(247,248,251,.8); border-radius:9px; padding:9px; } .kv small { display:block; color:var(--muted); font-size:10px; } .kv b { display:block; font:12px var(--mono); margin-top:4px; overflow-wrap:anywhere; } .events { margin-top:14px; } .event { display:flex; justify-content:space-between; gap:8px; border-top:1px solid var(--line); padding:8px 0; font:11px var(--mono); } .event span:first-child { color:var(--muted); } .run-meta { color:var(--muted); font:11px var(--mono); margin-top:10px; }
-    @media (max-width:1050px) { .workspace { grid-template-columns:1fr } .summary { grid-template-columns:repeat(3,1fr) } .lower { grid-template-columns:1fr } } @media (max-width:620px) { body { padding:10px } .shell { padding:14px } .summary { grid-template-columns:repeat(2,1fr) } header { align-items:flex-start; flex-direction:column } .nav { margin-left:0 } }
+    :root { --canvas:#f6f6f8; --ink:#0b0b10; --ink2:#3b3f4b; --ink3:#5b5f6b; --muted:#8a8f9c; --hair:rgba(11,11,16,.1); --hair2:rgba(11,11,16,.14); --blue:#0a8cff; --green:#1f7a4d; --red:#b91c1c; --amber:#b7791f; --green-soft:rgba(31,122,77,.1); --red-soft:rgba(216,13,13,.08); --amber-soft:rgba(183,121,31,.1); --blue-soft:rgba(10,140,255,.1); --card:rgba(255,255,255,.72); --sans:"Instrument Sans",-apple-system,Helvetica,Arial,sans-serif; --mono:"Fragment Mono",ui-monospace,Menlo,monospace; --serif:"Instrument Serif",Georgia,serif; }
+    * { box-sizing:border-box }
+    html,body { margin:0; min-height:100%; background:var(--canvas); color:var(--ink); font-family:var(--sans); font-size:14px; -webkit-font-smoothing:antialiased; }
+    body { background:radial-gradient(60% 55% at 12% 0%,rgba(255,138,212,.35),transparent 60%),radial-gradient(55% 60% at 88% 8%,rgba(140,200,255,.38),transparent 60%),radial-gradient(50% 50% at 70% 100%,rgba(179,157,255,.3),transparent 60%),radial-gradient(45% 45% at 15% 100%,rgba(255,178,122,.28),transparent 60%),var(--canvas); padding:28px; }
+    .frame { width:min(1640px,100%); min-height:calc(100vh - 56px); margin:auto; background:rgba(255,255,255,.55); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); border:1px solid rgba(255,255,255,.7); border-radius:22px; box-shadow:0 30px 80px rgba(11,11,16,.1); padding:22px 26px 24px; }
+    header { display:flex; align-items:center; gap:18px; }
+    .brand { display:flex; align-items:baseline; gap:10px; }
+    .brand b { font-size:19px; font-weight:600; letter-spacing:-.01em; }
+    .brand i { font-family:var(--serif); font-style:italic; font-size:19px; color:var(--ink2); }
+    .block { font-family:var(--mono); color:var(--ink3); font-size:13px; margin-left:6px; }
+    .pills { margin-left:auto; display:flex; gap:8px; align-items:center; }
+    .pill { font-family:var(--mono); font-size:12px; padding:6px 12px; border-radius:999px; border:1px solid var(--hair2); background:rgba(255,255,255,.7); color:var(--ink2); text-decoration:none; }
+    .pill.live { background:var(--green-soft); border-color:transparent; color:var(--green); }
+    .pill .dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); margin-right:7px; }
+    .hero { padding:48px 0 28px; max-width:980px; }
+    .eyebrow { font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+    .hero h1 { margin:10px 0 12px; font-size:42px; line-height:1.04; letter-spacing:-.045em; font-weight:500; }
+    .hero p { margin:0; max-width:780px; color:var(--ink3); font-size:18px; line-height:1.55; }
+    .control-card { background:var(--card); border:1px solid var(--hair); border-radius:16px; padding:18px; }
+    .control-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px 14px; }
+    .field label { display:block; color:var(--muted); font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; margin:0 0 7px; }
+    input,select,button { width:100%; border:1px solid var(--hair2); border-radius:10px; padding:11px 12px; font:12px var(--mono); background:rgba(255,255,255,.76); color:var(--ink); min-height:42px; }
+    input:focus,select:focus,button:focus-visible { outline:2px solid rgba(10,140,255,.28); outline-offset:2px; }
+    .control-grid .wide { grid-column:span 2; }
+    .control-actions { display:flex; align-items:flex-end; gap:12px; margin-top:14px; }
+    .control-actions .settings { flex:1; margin:0; }
+    .settings { color:var(--muted); font:11px/1.5 var(--mono); }
+    button { width:auto; min-width:150px; margin:0; background:var(--ink); color:var(--canvas); border-color:transparent; cursor:pointer; font-family:var(--sans); font-weight:600; }
+    button:hover { background:var(--ink2); }
+    button:disabled { opacity:.55; cursor:wait; }
+    .notice { margin:14px 0 22px; padding:0 2px; color:var(--ink3); font:12px/1.45 var(--mono); }
+    .notice strong { color:var(--amber); font-weight:500; }
+    .error { color:var(--red); background:var(--red-soft); border:1px solid rgba(185,28,28,.25); border-radius:10px; padding:10px 12px; margin-top:12px; display:none; font:12px/1.45 var(--mono); }
+    .main { min-width:0; }
+    .summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0 12px; margin-bottom:18px; }
+    .metric { min-height:108px; background:rgba(255,255,255,.28); border-top:2px solid var(--ink); border-radius:0; padding:18px 18px 20px; }
+    .metric:nth-child(3) { border-top-color:var(--green); }
+    .metric:nth-child(4) { border-top-color:var(--red); }
+    .metric:nth-child(5),.metric:nth-child(6) { grid-column:span 2; }
+    .metric:nth-child(6) { border-top-color:var(--green); }
+    .metric small { display:block; color:var(--muted); font:11px var(--mono); letter-spacing:.08em; text-transform:uppercase; }
+    .metric b { display:block; font:28px var(--mono); letter-spacing:-.03em; margin-top:11px; }
+    .metric b.pos { color:var(--green); }
+    .metric b.neg { color:var(--red); }
+    .card { background:var(--card); border:1px solid var(--hair); border-radius:16px; padding:18px 20px; position:relative; overflow:hidden; }
+    .card h2 { margin:0 0 12px; font-size:15px; font-weight:500; letter-spacing:-.01em; }
+    .chart-card { margin-bottom:14px; }
+    .chart-head { display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:9px; }
+    .chart-head h2 { margin:0; }
+    .chart-head span { color:var(--muted); font:11px var(--mono); text-align:right; }
+    svg { width:100%; height:180px; display:block; background:rgba(250,250,252,.42); border-radius:10px; }
+    .empty { color:var(--muted); text-align:center; padding:65px 10px; font:12px var(--mono); }
+    .lower { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(280px,1fr); gap:14px; }
+    table { width:100%; border-collapse:collapse; font:11px var(--mono); }
+    th { text-align:left; color:var(--muted); font-weight:400; padding:8px 6px; border-bottom:1px solid var(--hair2); }
+    td { padding:9px 6px; border-bottom:1px solid rgba(11,11,16,.07); white-space:nowrap; color:var(--ink3); }
+    tbody tr { cursor:pointer; }
+    tbody tr:hover,tbody tr.selected { background:var(--blue-soft); }
+    .tag { color:#0763b8; }
+    .win { color:var(--green); }
+    .loss { color:var(--red); }
+    .open { color:var(--amber); }
+    .table-wrap { overflow:auto; max-height:340px; }
+    .detail { min-height:340px; }
+    .detail h2 { margin-bottom:4px; }
+    .detail .sub { color:var(--muted); font:11px/1.45 var(--mono); margin-bottom:14px; }
+    .detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .kv { background:rgba(247,248,251,.8); border-radius:9px; padding:9px; }
+    .kv small { display:block; color:var(--muted); font:10px var(--mono); }
+    .kv b { display:block; font:12px var(--mono); margin-top:4px; overflow-wrap:anywhere; }
+    .events { margin-top:14px; }
+    .event { display:flex; justify-content:space-between; gap:8px; border-top:1px solid var(--hair); padding:8px 0; font:11px var(--mono); }
+    .event span:first-child { color:var(--muted); }
+    .run-meta { color:var(--muted); font:11px var(--mono); margin-top:10px; }
+    @media (max-width:1050px) { .control-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .lower { grid-template-columns:1fr; } }
+    @media (max-width:620px) { body { padding:10px; } .frame { min-height:calc(100vh - 20px); padding:16px; } header { align-items:flex-start; flex-direction:column; } .pills { margin-left:0; flex-wrap:wrap; } .hero { padding:34px 0 22px; } .hero h1 { font-size:34px; } .hero p { font-size:16px; } .control-grid { grid-template-columns:1fr; } .control-grid .wide { grid-column:auto; } .control-actions { align-items:stretch; flex-direction:column; } button { width:100%; } .summary { grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 8px; } .metric:nth-child(5),.metric:nth-child(6) { grid-column:span 2; } .chart-head { align-items:flex-start; flex-direction:column; } }
   </style>
 </head>
 <body>
-  <main class="shell">
-    <header><h1>ISX <span>Replay</span></h1><div class="nav"><a href="index.html">live dashboard</a></div></header>
-    <div class="notice">1m-trigger-proxy · completed 1-minute historical bars · no exact tick or 5-second fill claim · replay never submits orders</div>
-    <div class="workspace">
-      <aside class="card">
-        <h2>Run and inspect</h2>
-        <label for="source">Data source</label><select id="source"><option value="fixture">Deterministic fixture · offline</option><option value="alpaca">Alpaca historical · crypto 1m</option></select>
-        <label for="symbol">Pair</label><input id="symbol" value="BTC/USD" />
-        <div class="fieldrow"><div><label for="start">Start UTC</label><input id="start" type="datetime-local" step="60" /></div><div><label for="end">End UTC</label><input id="end" type="datetime-local" step="60" /></div></div>
-        <div class="fieldrow"><div><label for="target">Target R</label><input id="target" type="number" min="0.1" step="0.1" value="4" /></div><div><label for="risk">Risk USD</label><input id="risk" type="number" min="1" step="1" value="100" /></div></div>
-        <div class="fieldrow"><div><label for="be">Break-even R</label><input id="be" type="number" min="0.1" step="0.1" value="1" /></div><div><label for="lock-trigger">Lock at R</label><input id="lock-trigger" type="number" min="0.1" step="0.1" value="2" /></div></div>
-        <label for="lock-to">Lock stop to R</label><input id="lock-to" type="number" min="0" step="0.1" value="1" />
-        <button id="run">Run replay</button><div id="error" class="error"></div>
-        <div class="settings">ISX sequence: 15m close-confirmed Intent → 1m S1 → 61.8–79.0% AOI → 1m S2/X. All timestamps and output dates are UTC.</div>
-      </aside>
-      <section class="main">
+  <main class="frame">
+    <header>
+      <div class="brand"><b>ISX</b><i>Replay lab</i></div>
+      <span class="block">historical execution</span>
+      <div class="pills"><span class="pill live"><span class="dot"></span>range ready</span><a class="pill" href="index.html">live dashboard ↗</a></div>
+    </header>
+    <section class="hero">
+      <div class="eyebrow">execution model&nbsp; / &nbsp;ISX close-confirmed sequence</div>
+      <h1>Replay a range. See every decision.</h1>
+      <p>Run the tagged 15m bias, 1m refinement, and lower-timeframe trigger sequence over a UTC date range. Historical mode reads Alpaca minute bars without submitting orders; fixture mode is for deterministic model checks.</p>
+    </section>
+    <section class="control-card">
+      <div class="control-grid">
+        <div class="field"><label for="start">From UTC</label><input id="start" type="datetime-local" step="60" /></div>
+        <div class="field"><label for="end">To UTC</label><input id="end" type="datetime-local" step="60" /></div>
+        <div class="field"><label for="source">Data source</label><select id="source"><option value="fixture">Deterministic fixture · offline</option><option value="alpaca">Alpaca historical · crypto 1m</option></select></div>
+        <div class="field"><label for="symbol">Pair</label><input id="symbol" value="BTC/USD" /></div>
+        <div class="field"><label for="target">Target R</label><input id="target" type="number" min="0.1" step="0.1" value="4" /></div>
+        <div class="field"><label for="risk">Risk USD</label><input id="risk" type="number" min="1" step="1" value="100" /></div>
+        <div class="field"><label for="be">Break-even R</label><input id="be" type="number" min="0.1" step="0.1" value="1" /></div>
+        <div class="field"><label for="lock-trigger">Lock at R</label><input id="lock-trigger" type="number" min="0.1" step="0.1" value="2" /></div>
+        <div class="field"><label for="lock-to">Lock stop to R</label><input id="lock-to" type="number" min="0" step="0.1" value="1" /></div>
+        <div class="field"><label>Execution tag</label><input value="ISX-REPLAY · paper read" readonly /></div>
+      </div>
+      <div class="control-actions"><div class="settings">ISX sequence: 15m close-confirmed Intent → 1m S1 → 61.8–79.0% AOI → 1m S2/X. All timestamps and output dates are UTC.</div><button id="run">Run replay</button></div>
+      <div id="error" class="error"></div>
+    </section>
+    <div class="notice"><strong>Historical mode.</strong> Authenticated Alpaca 1-minute crypto bars are replayed through the structural rules. Trigger timestamps are a 1-minute historical proxy; exact 5-second or tick fills are not reconstructed, and replay never submits orders.</div>
+    <section class="main">
         <div class="summary" id="summary"></div>
-        <div class="card chart-card"><div class="chart-head"><h2>Cumulative result</h2><span id="chart-label">No replay loaded</span></div><svg id="chart" viewBox="0 0 800 180" preserveAspectRatio="none"><text x="50%" y="50%" text-anchor="middle" fill="#717684" font-family="Fragment Mono" font-size="12">Run a replay to plot cumulative R</text></svg></div>
+        <div class="card chart-card"><div class="chart-head"><h2>Cumulative result</h2><span id="chart-label">No replay loaded</span></div><svg id="chart" viewBox="0 0 800 180" preserveAspectRatio="none"><text x="50%" y="50%" text-anchor="middle" fill="#8a8f9c" font-family="Fragment Mono" font-size="12">Run a replay to plot cumulative R</text></svg></div>
         <div class="lower"><div class="card"><h2>Trade ledger</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Pair</th><th>Side</th><th>Entry UTC</th><th>Exit UTC</th><th>Result</th><th>R</th><th>P&amp;L</th><th>Execution tag</th></tr></thead><tbody id="ledger"><tr><td colspan="9" class="empty">No replay loaded</td></tr></tbody></table></div></div><div class="card detail" id="detail"><h2>Trade detail</h2><div class="sub">Click a ledger row to inspect the structure sequence and lifecycle.</div><div class="empty">Select a trade</div></div></div>
       </section>
-    </div>
     <div class="run-meta" id="run-meta"></div>
   </main>
   <script>
@@ -56,11 +132,11 @@
       $("summary").innerHTML = metric("Sessions", summary.sessions) + metric("Trades", summary.trades) + metric("Wins", summary.wins, "pos") + metric("Losses", summary.losses, "neg") + metric("Total R", Number(summary.total_r || 0).toFixed(2), summary.total_r >= 0 ? "pos" : "neg") + metric("P&L USD", "$" + Number(summary.pnl_usd || 0).toFixed(2), summary.pnl_usd >= 0 ? "pos" : "neg");
     }
     function renderChart(points) {
-      const svg = $("chart"); if (!points.length) { svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#717684" font-family="Fragment Mono" font-size="12">No closed trades in this range</text>'; return; }
+      const svg = $("chart"); if (!points.length) { svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#8a8f9c" font-family="Fragment Mono" font-size="12">No closed trades in this range</text>'; return; }
       const values = points.map((p) => Number(p.r)), min = Math.min(0, ...values), max = Math.max(0, ...values), span = Math.max(0.01, max - min), w = 800, h = 180, pad = 18;
       const xy = (value, index) => `${pad + index * (w - pad * 2) / Math.max(1, values.length - 1)},${h - pad - (value - min) * (h - pad * 2) / span}`;
       const zeroY = h - pad - (0 - min) * (h - pad * 2) / span;
-      svg.innerHTML = `<line x1="${pad}" x2="${w-pad}" y1="${zeroY}" y2="${zeroY}" stroke="#c9ccd4" stroke-dasharray="3 4"/><polyline fill="none" stroke="#0a8cff" stroke-width="3" points="${values.map(xy).join(" ")}"/><circle cx="${xy(values.at(-1), values.length-1).split(",")[0]}" cy="${xy(values.at(-1), values.length-1).split(",")[1]}" r="5" fill="#0a8cff"/>`;
+      svg.innerHTML = `<line x1="${pad}" x2="${w-pad}" y1="${zeroY}" y2="${zeroY}" stroke="rgba(11,11,16,.12)" stroke-dasharray="3 4"/><polyline fill="none" stroke="#0b0b10" stroke-width="2" points="${values.map(xy).join(" ")}"/><circle cx="${xy(values.at(-1), values.length-1).split(",")[0]}" cy="${xy(values.at(-1), values.length-1).split(",")[1]}" r="5" fill="#1f7a4d"/>`;
     }
     function renderLedger(trades) { $("ledger").innerHTML = trades.length ? trades.map((t, i) => `<tr data-index="${i}"><td>${esc(t.date)}</td><td>${esc(t.pair)}</td><td>${esc(t.side)}</td><td>${esc(stamp(t.entry_time_utc))}</td><td>${esc(stamp(t.exit_time_utc))}</td><td class="${t.result === "TARGET" ? "win" : t.result === "STOP" ? (Number(t.r_multiple || 0) > 0 ? "win" : "loss") : "open"}">${esc(t.result)}</td><td>${t.r_multiple == null ? "—" : Number(t.r_multiple).toFixed(2)}</td><td>${t.pnl_usd == null ? "—" : "$" + Number(t.pnl_usd).toFixed(2)}</td><td class="tag">${esc(t.execution_tag)}</td></tr>`).join("") : '<tr><td colspan="9" class="empty">No trades matched this range</td></tr>'; trades.forEach((_, i) => $("ledger").querySelector(`tr[data-index="${i}"]`)?.addEventListener("click", () => showDetail(trades[i], i))); }
     function showDetail(t, index) { document.querySelectorAll("tbody tr").forEach((row) => row.classList.remove("selected")); $("ledger").querySelector(`tr[data-index="${index}"]`)?.classList.add("selected"); const events = (t.lifecycle || []).map((e) => `<div class="event"><span>${esc(stamp(e.timestamp_utc))} · ${esc(e.event)}</span><b>${e.price == null ? "—" : Number(e.price).toFixed(4)}</b></div>`).join(""); $("detail").innerHTML = `<h2>${esc(t.execution_tag)}</h2><div class="sub">${esc(t.trigger_proxy)} · ${esc(t.result)} · ${esc(t.setup_id)}</div><div class="detail-grid">${[["Intent", stamp(t.intent_time_utc)],["S1", stamp(t.s1_time_utc)],["AOI", stamp(t.aoi_time_utc)],["S2 / X", stamp(t.s2_time_utc)],["Entry", stamp(t.entry_time_utc)],["Entry price", Number(t.entry_price).toFixed(4)],["Stop", Number(t.stop_price).toFixed(4)],["Target", Number(t.target_price).toFixed(4)],["Exit", stamp(t.exit_time_utc)],["Exit price", t.exit_price == null ? "—" : Number(t.exit_price).toFixed(4)]].map(([k,v]) => `<div class="kv"><small>${k}</small><b>${esc(v)}</b></div>`).join("")}</div><div class="events"><h2>Lifecycle</h2>${events || '<div class="empty">No lifecycle events</div>'}</div>`; }
