@@ -9,10 +9,14 @@ merged via a symlink-free request handler.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import http.server
 import json
 import os
 import socketserver
+import threading
+import time
+from uuid import uuid4
 from datetime import date
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -20,20 +24,142 @@ from urllib.parse import parse_qs, urlsplit
 from dotenv import load_dotenv
 
 from .execution.sweep import DEFAULT_EXECUTION_MODEL_TAG
+from .blueprint_replay import (
+    BLUEPRINT_VX_TAG,
+    BlueprintRun,
+    BlueprintRunStore,
+    build_fixture_run,
+    build_historical_run,
+    canonical_model_tag,
+)
 from .historical_replay import HistoricalReplayError, replay_historical_range
 from .replay import replay_range
 
 LOG_DIR = Path(os.environ.get("JEV_LOOP_HOME", str(Path.home() / ".jev-loop")))
 SKILL_DIR = Path(__file__).resolve().parent.parent
 DASHBOARD_DIR = SKILL_DIR / "dashboard"
+BLUEPRINT_RUNS = BlueprintRunStore()
+BLUEPRINT_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="blueprint-replay")
+BLUEPRINT_JOBS: dict[str, dict] = {}
+BLUEPRINT_JOBS_LOCK = threading.RLock()
+
+
+def _job_snapshot(job: dict) -> dict:
+    return {key: value for key, value in job.items() if key != "future"}
+
+
+def _set_job(job_id: str, **changes) -> dict:
+    with BLUEPRINT_JOBS_LOCK:
+        job = BLUEPRINT_JOBS[job_id]
+        job.update(changes)
+        job["heartbeat"] = time.time()
+        return _job_snapshot(job)
+
+
+def _run_blueprint_job(job_id: str, payload: dict) -> None:
+    _set_job(job_id, state="running", stage="replaying", progress=0.1, message="Replaying completed bars")
+    try:
+        start = date.fromisoformat(str(payload["start_utc"])[:10])
+        end = date.fromisoformat(str(payload["end_utc"])[:10])
+        tag = str(payload.get("execution_model_tag") or payload.get("tag") or BLUEPRINT_VX_TAG)
+        canonical_model_tag(tag)
+        source = str(payload.get("source", "fixture")).lower()
+        if source == "fixture":
+            run = build_fixture_run(start, end, tag)
+        elif source in {"historical", "alpaca"}:
+            run = build_historical_run(start, end, tag)
+        else:
+            raise ValueError("source must be historical or fixture")
+        BLUEPRINT_RUNS.put(run)
+        _set_job(job_id, state="complete", stage="complete", progress=1.0, message="Replay complete", run_id=run.run_id, result=run.result)
+    except (HistoricalReplayError, ValueError, KeyError) as exc:
+        _set_job(job_id, state="error", stage="error", progress=1.0, message=str(exc), error=str(exc))
+    except Exception as exc:  # pragma: no cover - defensive boundary for worker errors
+        _set_job(job_id, state="error", stage="error", progress=1.0, message="Replay failed", error=str(exc))
+
+
+def _new_blueprint_job(payload: dict) -> dict:
+    job_id = uuid4().hex
+    job = {
+        "job_id": job_id,
+        "state": "queued",
+        "stage": "queued",
+        "progress": 0.0,
+        "message": "Replay queued",
+        "heartbeat": time.time(),
+        "run_id": None,
+        "result": None,
+        "error": None,
+    }
+    with BLUEPRINT_JOBS_LOCK:
+        BLUEPRINT_JOBS[job_id] = job
+    job["future"] = BLUEPRINT_EXECUTOR.submit(_run_blueprint_job, job_id, payload)
+    return _job_snapshot(job)
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
-        if urlsplit(self.path).path == "/replay.json":
+        path = urlsplit(self.path).path
+        if path == "/replay.json":
             self._serve_replay()
             return
+        if path.startswith("/api/replay/jobs/"):
+            self._serve_blueprint_job(path.rsplit("/", 1)[-1])
+            return
+        if path.startswith("/api/replay/") and path.endswith("/chart"):
+            self._serve_blueprint_chart()
+            return
         super().do_GET()
+
+    def do_POST(self):  # noqa: N802
+        if urlsplit(self.path).path != "/api/replay/jobs":
+            self._json_response({"ok": False, "error": "not found"}, 404)
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length) or b"{}")
+            if not isinstance(payload, dict):
+                raise ValueError("request body must be an object")
+            job = _new_blueprint_job(payload)
+            self._json_response({"ok": True, "job": job}, 202)
+        except (ValueError, json.JSONDecodeError) as exc:
+            self._json_response({"ok": False, "error": str(exc)}, 400)
+
+    def _json_response(self, payload: dict, status: int = 200) -> None:
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _serve_blueprint_job(self, job_id: str) -> None:
+        with BLUEPRINT_JOBS_LOCK:
+            job = BLUEPRINT_JOBS.get(job_id)
+            payload = _job_snapshot(job) if job else None
+        if payload is None:
+            self._json_response({"ok": False, "error": "unknown replay job"}, 404)
+            return
+        self._json_response({"ok": True, "job": payload})
+
+    def _serve_blueprint_chart(self) -> None:
+        parts = [part for part in urlsplit(self.path).path.split("/") if part]
+        if len(parts) != 6 or parts[:2] != ["api", "replay"] or parts[3] != "trades" or parts[5] != "chart":
+            self._json_response({"ok": False, "error": "invalid chart path"}, 404)
+            return
+        run = BLUEPRINT_RUNS.get(parts[2])
+        if run is None:
+            self._json_response({"ok": False, "error": "unknown replay run"}, 404)
+            return
+        query = parse_qs(urlsplit(self.path).query)
+        timeframe = query.get("timeframe", ["1m"])[0]
+        try:
+            payload = run.chart(parts[4], timeframe)
+        except (KeyError, ValueError) as exc:
+            self._json_response({"ok": False, "error": str(exc)}, 400 if isinstance(exc, ValueError) else 404)
+            return
+        self._json_response(payload)
 
     def _serve_replay(self) -> None:
         query = parse_qs(urlsplit(self.path).query)
@@ -59,13 +185,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except ValueError as exc:
             payload = {"error": str(exc)}
             status = 400
-        body = json.dumps(payload).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        self._json_response(payload, status)
 
     def translate_path(self, path: str) -> str:
         path = path.split("?", 1)[0].split("#", 1)[0]
@@ -97,6 +217,7 @@ def main(argv: list[str] | None = None) -> int:
     with socketserver.TCPServer(("127.0.0.1", args.port), Handler) as httpd:
         print(f"dashboard: http://127.0.0.1:{args.port}/index.html")
         print(f"replay lab: http://127.0.0.1:{args.port}/replay.html")
+        print(f"Blueprint-VX replay: http://127.0.0.1:{args.port}/blueprint-vx-replay.html")
         print(f"dark wall: http://127.0.0.1:{args.port}/wall.html")
         print(f"raw feed:  http://127.0.0.1:{args.port}/latest.json")
         print("Ctrl+C to stop.")

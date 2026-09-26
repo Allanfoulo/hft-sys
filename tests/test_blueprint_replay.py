@@ -1,4 +1,9 @@
 from datetime import date
+import json
+import socketserver
+import threading
+import time
+from urllib.request import Request, urlopen
 
 import pytest
 
@@ -9,6 +14,36 @@ from jevloop.blueprint_replay import (
     canonical_model_tag,
     public_model_tag,
 )
+from jevloop.serve import Handler
+
+
+class _ThreadingServer(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+
+@pytest.fixture()
+def replay_server():
+    server = _ThreadingServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def _json_request(url: str, method: str = "GET", payload: dict | None = None) -> tuple[int, dict]:
+    body = json.dumps(payload).encode() if payload is not None else None
+    request = Request(url, data=body, method=method, headers={"Content-Type": "application/json"} if body else {})
+    try:
+        with urlopen(request, timeout=5) as response:
+            return response.status, json.loads(response.read())
+    except Exception as exc:
+        if hasattr(exc, "read"):
+            return exc.code, json.loads(exc.read())
+        raise
 
 
 def test_blueprint_vx_aliases_to_london_sweep_and_tags_run_and_rows():
@@ -50,3 +85,40 @@ def test_store_keeps_runs_isolated():
     assert store.get(first.run_id) is first
     assert store.get(second.run_id) is second
     assert first.run_id != second.run_id
+
+
+def test_background_job_and_lazy_chart_routes(replay_server):
+    status, body = _json_request(
+        replay_server + "/api/replay/jobs",
+        "POST",
+        {
+            "source": "fixture",
+            "execution_model_tag": "blueprint-VX",
+            "start_utc": "2026-09-23T00:00:00Z",
+            "end_utc": "2026-09-23T23:59:59Z",
+        },
+    )
+    assert status == 202
+    job_id = body["job"]["job_id"]
+    for _ in range(50):
+        status, job_body = _json_request(replay_server + f"/api/replay/jobs/{job_id}")
+        assert status == 200
+        if job_body["job"]["state"] == "complete":
+            break
+        time.sleep(0.02)
+    assert job_body["job"]["state"] == "complete"
+    result = job_body["job"]["result"]
+    row = result["rows"][0]
+    status, chart = _json_request(
+        replay_server + f"/api/replay/{result['run_id']}/trades/{row['trade_id']}/chart?timeframe=15m"
+    )
+    assert status == 200
+    assert chart["timeframe"] == "15m"
+    assert chart["bars"]
+    assert chart["trade"]["execution_model_tag"] == BLUEPRINT_VX_TAG
+
+
+def test_chart_route_rejects_unknown_run_and_timeframe(replay_server):
+    status, body = _json_request(replay_server + "/api/replay/missing/trades/missing/chart?timeframe=1m")
+    assert status == 404
+    assert body["ok"] is False
