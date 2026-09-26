@@ -17,6 +17,7 @@ from ..isx.structure import (
 )
 from .models import (
     ReplayLifecycleEvent,
+    ReplayMetrics,
     ReplayRequest,
     ReplayResult,
     ReplayResultKind,
@@ -317,7 +318,8 @@ class ReplayEngine:
     def _result(request, bars, trades):
         closed = [trade for trade in trades if trade.r_multiple is not None]
         wins = sum(1 for trade in closed if trade.r_multiple and trade.r_multiple > 0)
-        losses = sum(1 for trade in closed if trade.r_multiple is not None and trade.r_multiple <= 0)
+        losses = sum(1 for trade in closed if trade.r_multiple is not None and trade.r_multiple < 0)
+        breakevens = sum(1 for trade in closed if trade.r_multiple == 0)
         total_r = sum(trade.r_multiple or 0.0 for trade in closed)
         pnl = sum(trade.pnl_usd or 0.0 for trade in closed)
         cumulative = []
@@ -336,8 +338,111 @@ class ReplayEngine:
                 "pnl_usd": running_pnl,
             })
         sessions = len({bar.timestamp.date().isoformat() for bar in bars})
-        summary = ReplaySummary(sessions, len(trades), wins, losses, len(trades) - len(closed), total_r, pnl)
+        metrics = ReplayEngine._metrics(closed, request.risk_usd)
+        summary = ReplaySummary(
+            sessions,
+            len(trades),
+            wins,
+            losses,
+            len(trades) - len(closed),
+            total_r,
+            pnl,
+            breakevens,
+            metrics,
+        )
         return ReplayResult(request, summary, trades, cumulative, len(bars))
+
+    @staticmethod
+    def _metrics(closed, risk_usd):
+        count = len(closed)
+        wins = [trade for trade in closed if trade.r_multiple is not None and trade.r_multiple > 0]
+        losses = [trade for trade in closed if trade.r_multiple is not None and trade.r_multiple < 0]
+        breakevens = [trade for trade in closed if trade.r_multiple == 0]
+        total_r = sum(trade.r_multiple or 0.0 for trade in closed)
+        gross_win = sum(trade.r_multiple for trade in wins)
+        gross_loss = abs(sum(trade.r_multiple for trade in losses))
+
+        max_win_streak = 0
+        max_loss_streak = 0
+        max_non_positive_streak = 0
+        current_streak = 0
+        current_streak_type = "NONE"
+        win_streak = 0
+        loss_streak = 0
+        non_positive_streak = 0
+        for trade in closed:
+            r_multiple = trade.r_multiple
+            if r_multiple > 0:
+                win_streak += 1
+                loss_streak = 0
+                non_positive_streak = 0
+                current_streak = win_streak
+                current_streak_type = "WIN"
+            elif r_multiple < 0:
+                win_streak = 0
+                loss_streak += 1
+                non_positive_streak += 1
+                current_streak = loss_streak
+                current_streak_type = "LOSS"
+            else:
+                win_streak = 0
+                loss_streak = 0
+                non_positive_streak += 1
+                current_streak = 1
+                current_streak_type = "BREAK_EVEN"
+            max_win_streak = max(max_win_streak, win_streak)
+            max_loss_streak = max(max_loss_streak, loss_streak)
+            max_non_positive_streak = max(max_non_positive_streak, non_positive_streak)
+
+        running_r = 0.0
+        peak_r = 0.0
+        max_drawdown_r = 0.0
+        for trade in closed:
+            running_r += trade.r_multiple or 0.0
+            peak_r = max(peak_r, running_r)
+            max_drawdown_r = max(max_drawdown_r, peak_r - running_r)
+
+        daily_counts: dict[str, int] = {}
+        daily_losses: dict[str, int] = {}
+        for trade in closed:
+            daily_counts[trade.date_utc] = daily_counts.get(trade.date_utc, 0) + 1
+            if trade.r_multiple is not None and trade.r_multiple < 0:
+                daily_losses[trade.date_utc] = daily_losses.get(trade.date_utc, 0) + 1
+
+        has_event = lambda trade, event: any(item.event == event for item in trade.lifecycle)
+        target_exits = sum(1 for trade in closed if trade.result is ReplayResultKind.TARGET)
+        stop_exits = sum(1 for trade in closed if trade.result is ReplayResultKind.STOP)
+        stop_losses = sum(1 for trade in closed if trade.result is ReplayResultKind.STOP and trade.r_multiple < 0)
+        stop_breakevens = sum(1 for trade in closed if trade.result is ReplayResultKind.STOP and trade.r_multiple == 0)
+        stop_profit_locks = sum(1 for trade in closed if trade.result is ReplayResultKind.STOP and trade.r_multiple > 0)
+        denominator = float(count or 1)
+        return ReplayMetrics(
+            breakevens=len(breakevens),
+            target_exits=target_exits,
+            stop_exits=stop_exits,
+            stop_losses=stop_losses,
+            stop_breakevens=stop_breakevens,
+            stop_profit_locks=stop_profit_locks,
+            break_even_moves=sum(1 for trade in closed if has_event(trade, "BREAK_EVEN")),
+            profit_lock_moves=sum(1 for trade in closed if has_event(trade, "PROFIT_LOCK")),
+            win_rate=len(wins) / denominator,
+            loss_rate=len(losses) / denominator,
+            breakeven_rate=len(breakevens) / denominator,
+            avg_r=total_r / denominator,
+            avg_win_r=gross_win / len(wins) if wins else 0.0,
+            avg_loss_r=sum(trade.r_multiple for trade in losses) / len(losses) if losses else 0.0,
+            expectancy_r=total_r / denominator,
+            profit_factor=gross_win / gross_loss if gross_loss else None,
+            max_win_streak=max_win_streak,
+            max_loss_streak=max_loss_streak,
+            max_non_positive_streak=max_non_positive_streak,
+            current_streak=current_streak,
+            current_streak_type=current_streak_type,
+            max_drawdown_r=max_drawdown_r,
+            max_drawdown_usd=max_drawdown_r * risk_usd,
+            max_trades_per_day=max(daily_counts.values(), default=0),
+            max_losses_per_day=max(daily_losses.values(), default=0),
+        )
 
 
 def aggregate_15m(minute_bars: Sequence[Candle]) -> list[Candle]:

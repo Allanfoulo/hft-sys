@@ -49,6 +49,75 @@ def test_replay_request_requires_utc_and_uses_isx_lifecycle_defaults():
         request(end_utc="2026-09-23T00:00:00Z")
 
 
+def test_replay_request_allows_ninety_days_but_rejects_longer_ranges():
+    parsed = request(
+        start_utc="2026-01-01T00:00:00Z",
+        end_utc="2026-04-01T00:00:00Z",
+    )
+    assert (parsed.end_utc - parsed.start_utc).days == 90
+    with pytest.raises(ValueError, match="90 days"):
+        request(
+            start_utc="2026-01-01T00:00:00Z",
+            end_utc="2026-04-02T00:00:00Z",
+        )
+
+
+def test_summary_separates_breakevens_and_reports_quality_metrics():
+    def trade(number, r_multiple, result, events=()):
+        timestamp = DAY + timedelta(minutes=number)
+        item = ReplayTrade(
+            trade_id=f"metric-{number}",
+            date_utc="2026-09-24",
+            symbol="BTC/USD",
+            side=ReplaySide.BUY,
+            setup_id="ISX-B-metrics",
+            execution_tag=f"ISX-REPLAY-metric-{number}",
+            trigger_proxy="1m-trigger-proxy",
+            intent_time=DAY,
+            s1_time=DAY,
+            aoi_time=DAY,
+            s2_time=DAY,
+            entry_time=timestamp,
+            entry_price=10,
+            stop_price=9,
+            target_price=14,
+            exit_time=timestamp,
+            exit_price=10 + r_multiple,
+            result=result,
+            r_multiple=r_multiple,
+            pnl_usd=r_multiple * 100,
+            active_stop=9,
+        )
+        item.lifecycle = [ReplayLifecycleEvent(timestamp, event, 10, 9, 14) for event in events]
+        return item
+
+    trades = [
+        trade(1, -1, ReplayResultKind.STOP),
+        trade(2, -1, ReplayResultKind.STOP),
+        trade(3, 0, ReplayResultKind.STOP, ("BREAK_EVEN",)),
+        trade(4, 4, ReplayResultKind.TARGET, ("BREAK_EVEN", "PROFIT_LOCK")),
+        trade(5, 1, ReplayResultKind.STOP, ("BREAK_EVEN", "PROFIT_LOCK")),
+    ]
+    result = ReplayEngine._result(request(), [Candle(DAY, 10, 11, 9, 10)], trades)
+    metrics = result.summary.metrics
+
+    assert result.summary.wins == 2
+    assert result.summary.losses == 2
+    assert result.summary.breakevens == 1
+    assert metrics is not None
+    assert metrics.max_win_streak == 2
+    assert metrics.max_loss_streak == 2
+    assert metrics.max_non_positive_streak == 3
+    assert metrics.target_exits == 1
+    assert metrics.stop_losses == 2
+    assert metrics.stop_breakevens == 1
+    assert metrics.stop_profit_locks == 1
+    assert metrics.break_even_moves == 3
+    assert metrics.profit_lock_moves == 2
+    assert metrics.max_drawdown_r == pytest.approx(2.0)
+    assert result.to_dict()["summary"]["metrics"]["breakevens"] == 1
+
+
 def test_fixture_replay_is_deterministic_and_tagged():
     service = ReplayService()
     first = service.run(request().to_dict())

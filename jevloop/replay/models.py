@@ -8,7 +8,7 @@ from enum import Enum
 from typing import Any
 
 
-MAX_REPLAY_DAYS = 31
+MAX_REPLAY_DAYS = 90
 
 
 class ReplaySource(str, Enum):
@@ -262,6 +262,66 @@ class ReplayTrade:
 
 
 @dataclass(frozen=True)
+class ReplayMetrics:
+    """Derived outcome, streak, lifecycle, and exposure metrics for a run."""
+
+    breakevens: int
+    target_exits: int
+    stop_exits: int
+    stop_losses: int
+    stop_breakevens: int
+    stop_profit_locks: int
+    break_even_moves: int
+    profit_lock_moves: int
+    win_rate: float
+    loss_rate: float
+    breakeven_rate: float
+    avg_r: float
+    avg_win_r: float
+    avg_loss_r: float
+    expectancy_r: float
+    profit_factor: float | None
+    max_win_streak: int
+    max_loss_streak: int
+    max_non_positive_streak: int
+    current_streak: int
+    current_streak_type: str
+    max_drawdown_r: float
+    max_drawdown_usd: float
+    max_trades_per_day: int
+    max_losses_per_day: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "breakevens": self.breakevens,
+            "target_exits": self.target_exits,
+            "stop_exits": self.stop_exits,
+            "stop_losses": self.stop_losses,
+            "stop_breakevens": self.stop_breakevens,
+            "stop_profit_locks": self.stop_profit_locks,
+            "break_even_moves": self.break_even_moves,
+            "profit_lock_moves": self.profit_lock_moves,
+            "win_rate": self.win_rate,
+            "loss_rate": self.loss_rate,
+            "breakeven_rate": self.breakeven_rate,
+            "avg_r": self.avg_r,
+            "avg_win_r": self.avg_win_r,
+            "avg_loss_r": self.avg_loss_r,
+            "expectancy_r": self.expectancy_r,
+            "profit_factor": self.profit_factor,
+            "max_win_streak": self.max_win_streak,
+            "max_loss_streak": self.max_loss_streak,
+            "max_non_positive_streak": self.max_non_positive_streak,
+            "current_streak": self.current_streak,
+            "current_streak_type": self.current_streak_type,
+            "max_drawdown_r": self.max_drawdown_r,
+            "max_drawdown_usd": self.max_drawdown_usd,
+            "max_trades_per_day": self.max_trades_per_day,
+            "max_losses_per_day": self.max_losses_per_day,
+        }
+
+
+@dataclass(frozen=True)
 class ReplaySummary:
     sessions: int
     trades: int
@@ -270,17 +330,23 @@ class ReplaySummary:
     open_trades: int
     total_r: float
     pnl_usd: float
+    breakevens: int = 0
+    metrics: ReplayMetrics | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "sessions": self.sessions,
             "trades": self.trades,
             "wins": self.wins,
             "losses": self.losses,
+            "breakevens": self.breakevens,
             "open_trades": self.open_trades,
             "total_r": self.total_r,
             "pnl_usd": self.pnl_usd,
         }
+        if self.metrics is not None:
+            payload["metrics"] = self.metrics.to_dict()
+        return payload
 
 
 @dataclass(frozen=True)

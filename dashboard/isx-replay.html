@@ -42,14 +42,19 @@
     .main { min-width:0; }
     .summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0 12px; margin-bottom:18px; }
     .metric { min-height:108px; background:rgba(255,255,255,.28); border-top:2px solid var(--ink); border-radius:0; padding:18px 18px 20px; }
-    .metric:nth-child(3) { border-top-color:var(--green); }
-    .metric:nth-child(4) { border-top-color:var(--red); }
-    .metric:nth-child(5),.metric:nth-child(6) { grid-column:span 2; }
-    .metric:nth-child(6) { border-top-color:var(--green); }
+    .summary > .metric:nth-child(3) { border-top-color:var(--green); }
+    .summary > .metric:nth-child(4) { border-top-color:var(--red); }
+    .summary > .metric:nth-child(5),.summary > .metric:nth-child(6) { grid-column:span 2; }
+    .summary > .metric:nth-child(6) { border-top-color:var(--green); }
     .metric small { display:block; color:var(--muted); font:11px var(--mono); letter-spacing:.08em; text-transform:uppercase; }
     .metric b { display:block; font:28px var(--mono); letter-spacing:-.03em; margin-top:11px; }
     .metric b.pos { color:var(--green); }
     .metric b.neg { color:var(--red); }
+    .analytics-card { margin-bottom:14px; }
+    .analytics-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+    .analytics-grid .metric { min-height:82px; padding:13px 14px 14px; border-top:1px solid var(--hair2); background:rgba(255,255,255,.34); }
+    .analytics-grid .metric b { font-size:18px; margin-top:8px; }
+    .analytics-grid .metric small { font-size:10px; }
     .card { background:var(--card); border:1px solid var(--hair); border-radius:16px; padding:18px 20px; position:relative; overflow:hidden; }
     .card h2 { margin:0 0 12px; font-size:15px; font-weight:500; letter-spacing:-.01em; }
     .chart-card { margin-bottom:14px; }
@@ -113,7 +118,8 @@
     @keyframes toast-slide { 0% { transform:translateX(-110%); } 100% { transform:translateX(290%); } }
     .toast-meta { display:flex; justify-content:space-between; gap:10px; margin:8px 0 0 17px; color:var(--muted); font:10px var(--mono); }
     @media (max-width:1050px) { .control-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .lower { grid-template-columns:1fr; } }
-    @media (max-width:620px) { body { padding:10px; } .frame { min-height:calc(100vh - 20px); padding:16px; } header { align-items:flex-start; flex-direction:column; } .pills { margin-left:0; flex-wrap:wrap; } .hero { padding:34px 0 22px; } .hero h1 { font-size:34px; } .hero p { font-size:16px; } .control-grid { grid-template-columns:1fr; } .control-grid .wide { grid-column:auto; } .control-actions { align-items:stretch; flex-direction:column; } button { width:100%; } .summary { grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 8px; } .metric:nth-child(5),.metric:nth-child(6) { grid-column:span 2; } .chart-head { align-items:flex-start; flex-direction:column; } .run-toast { right:16px; bottom:16px; } }
+    @media (max-width:1050px) { .analytics-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+    @media (max-width:620px) { body { padding:10px; } .frame { min-height:calc(100vh - 20px); padding:16px; } header { align-items:flex-start; flex-direction:column; } .pills { margin-left:0; flex-wrap:wrap; } .hero { padding:34px 0 22px; } .hero h1 { font-size:34px; } .hero p { font-size:16px; } .control-grid { grid-template-columns:1fr; } .control-grid .wide { grid-column:auto; } .control-actions { align-items:stretch; flex-direction:column; } button { width:100%; } .summary { grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 8px; } .summary > .metric:nth-child(5),.summary > .metric:nth-child(6) { grid-column:span 2; } .analytics-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .chart-head { align-items:flex-start; flex-direction:column; } .run-toast { right:16px; bottom:16px; } }
   </style>
 </head>
 <body>
@@ -142,12 +148,13 @@
         <div class="field"><label for="lock-to">Lock stop to R</label><input id="lock-to" type="number" min="0" step="0.1" value="1" /></div>
         <div class="field"><label>Execution tag</label><input value="ISX-REPLAY · paper read" readonly /></div>
       </div>
-      <div class="control-actions"><div class="settings">ISX sequence: 15m close-confirmed Intent → 1m S1 → 61.8–79.0% AOI → 1m S2/X. All timestamps and output dates are UTC.</div><button id="run">Run replay</button></div>
+      <div class="control-actions"><div class="settings">ISX sequence: 15m close-confirmed Intent → 1m S1 → 61.8–79.0% AOI → 1m S2/X. All timestamps and output dates are UTC. Alpaca ranges up to 90 days run in the background.</div><button id="run">Run replay</button></div>
       <div id="error" class="error"></div>
     </section>
     <div class="notice"><strong>Historical mode.</strong> Authenticated Alpaca 1-minute crypto bars are replayed through the structural rules. Trigger timestamps are a 1-minute historical proxy; exact 5-second or tick fills are not reconstructed, and replay never submits orders.</div>
     <section class="main">
         <div class="summary" id="summary"></div>
+        <div class="card analytics-card"><div class="chart-head"><h2>Quality &amp; risk metrics</h2><span id="analytics-label">Actual losses exclude 0R break-even exits</span></div><div class="analytics-grid" id="analytics-grid"><div class="empty">Run a replay to calculate streaks, expectancy, and lifecycle outcomes.</div></div></div>
         <div class="card chart-card"><div class="chart-head"><h2>Cumulative result</h2><span id="chart-label">No replay loaded</span></div><svg id="chart" viewBox="0 0 800 180" preserveAspectRatio="none"><text x="50%" y="50%" text-anchor="middle" fill="#8a8f9c" font-family="Fragment Mono" font-size="12">Run a replay to plot cumulative R</text></svg></div>
         <div class="card trade-chart-card" id="trade-chart-card"><div class="chart-head trade-chart-head"><div><div class="eyebrow">candle-by-candle replay</div><h2 id="trade-chart-title">Select a trade to inspect its bars</h2></div><div class="chart-tools"><span id="trade-chart-label">1m trigger proxy</span><select id="chart-timeframe" aria-label="Chart timeframe"><option value="1m">1m trigger</option><option value="15m">15m context</option></select></div></div><div id="trade-chart-empty" class="empty">Click a ledger row to load completed OHLC candles, ISX markers, and lifecycle levels.</div><svg id="trade-chart-svg" viewBox="0 0 960 300" preserveAspectRatio="none" hidden></svg><div id="trade-chart-legend" class="trade-chart-legend" hidden><span class="legend-aoi">61.8–79% AOI</span><span class="legend-intent">Intent / structure</span><span class="legend-entry">S2 / X / lifecycle</span><span class="legend-risk">EX / stop / target</span></div></div>
         <div class="lower"><div class="card"><h2>Trade ledger</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Pair</th><th>Side</th><th>Entry UTC</th><th>Exit UTC</th><th>Result</th><th>R</th><th>P&amp;L</th><th>Execution tag</th></tr></thead><tbody id="ledger"><tr><td colspan="9" class="empty">No replay loaded</td></tr></tbody></table></div></div><div class="card detail" id="detail"><h2>Trade detail</h2><div class="sub">Click a ledger row to inspect the structure sequence and lifecycle.</div><div class="empty">Select a trade</div></div></div>
@@ -167,6 +174,34 @@
     function metric(label, value, cls="") { return `<div class="metric"><small>${label}</small><b class="${cls}">${esc(value)}</b></div>`; }
     function renderSummary(summary) {
       $("summary").innerHTML = metric("Sessions", summary.sessions) + metric("Trades", summary.trades) + metric("Wins", summary.wins, "pos") + metric("Losses", summary.losses, "neg") + metric("Total R", Number(summary.total_r || 0).toFixed(2), summary.total_r >= 0 ? "pos" : "neg") + metric("P&L USD", "$" + Number(summary.pnl_usd || 0).toFixed(2), summary.pnl_usd >= 0 ? "pos" : "neg");
+    }
+    function percent(value) { return `${(Number(value || 0) * 100).toFixed(1)}%`; }
+    function signedR(value) { const number = Number(value || 0); return `${number >= 0 ? "+" : ""}${number.toFixed(2)}R`; }
+    function renderAnalytics(summary) {
+      const metrics = summary.metrics || {};
+      const streak = metrics.current_streak_type && metrics.current_streak_type !== "NONE" ? `${metrics.current_streak} ${metrics.current_streak_type.replaceAll("_", " ")}` : "—";
+      $("analytics-grid").innerHTML = [
+        metric("Positive outcomes", `${summary.wins} · ${percent(metrics.win_rate)}`, "pos"),
+        metric("Actual losses", `${summary.losses} · ${percent(metrics.loss_rate)}`, "neg"),
+        metric("Break-even", `${summary.breakevens ?? metrics.breakevens ?? 0} · ${percent(metrics.breakeven_rate)}`),
+        metric("Expectancy", signedR(metrics.expectancy_r), metrics.expectancy_r >= 0 ? "pos" : "neg"),
+        metric("Profit factor", metrics.profit_factor == null ? "—" : Number(metrics.profit_factor).toFixed(2)),
+        metric("Average win", signedR(metrics.avg_win_r), "pos"),
+        metric("Average loss", signedR(metrics.avg_loss_r), "neg"),
+        metric("Current streak", streak),
+        metric("Max win streak", metrics.max_win_streak ?? 0, "pos"),
+        metric("Max loss streak", metrics.max_loss_streak ?? 0, "neg"),
+        metric("Max non-positive", metrics.max_non_positive_streak ?? 0),
+        metric("Max drawdown", `${Number(metrics.max_drawdown_r || 0).toFixed(2)}R · $${Number(metrics.max_drawdown_usd || 0).toFixed(0)}`, "neg"),
+        metric("Targets", metrics.target_exits ?? 0, "pos"),
+        metric("Stop losses", metrics.stop_losses ?? 0, "neg"),
+        metric("Stop break-even", metrics.stop_breakevens ?? 0),
+        metric("Stop profit-lock", metrics.stop_profit_locks ?? 0, "pos"),
+        metric("BE moves", metrics.break_even_moves ?? 0),
+        metric("Profit-lock moves", metrics.profit_lock_moves ?? 0),
+        metric("Max trades / day", metrics.max_trades_per_day ?? 0),
+        metric("Max losses / day", metrics.max_losses_per_day ?? 0, "neg"),
+      ].join("");
     }
     function renderChart(points) {
       const svg = $("chart"); if (!points.length) { svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#8a8f9c" font-family="Fragment Mono" font-size="12">No closed trades in this range</text>'; return; }
@@ -196,7 +231,7 @@
       const markers = (chart.markers || []).map((marker) => { const index = nearestIndex(bars, marker.timestamp_utc); if (index < 0) return ""; const xx = x(index), price = Number.isFinite(Number(marker.price)) ? Number(marker.price) : Number(bars[index].close), yy = y(price), color = markerColors[marker.kind] || "#5b5f6b"; return `<circle cx="${xx.toFixed(1)}" cy="${yy.toFixed(1)}" r="4" fill="${color}" stroke="#f6f6f8" stroke-width="1.5"/><text x="${(xx+6).toFixed(1)}" y="${Math.max(13, yy-7).toFixed(1)}" fill="${color}" font-family="Fragment Mono" font-size="9">${esc(marker.label)}</text>`; }).join("");
       svg.innerHTML = `${grid}${aoi}${levels}${candles}${markers}`; svg.hidden = false; $("trade-chart-empty").hidden = true; $("trade-chart-legend").hidden = false; $("trade-chart-label").textContent = `${timeframe} · ${bars.length.toLocaleString()} candles · ${chart.window_start_utc.slice(0,16).replace("T"," ")} → ${chart.window_end_utc.slice(0,16).replace("T"," ")} UTC`;
     }
-    async function loadTradeChart(trade) { clearTradeChart("Loading completed OHLC candles and ISX annotations…"); const requestId = chartRequestId; $("trade-chart-title").textContent = trade.execution_tag; if (!latestResult || !latestResult.run_id) { clearTradeChart("Run the replay again to enable candle detail."); return; } try { const response = await fetch(`/api/replay/${encodeURIComponent(latestResult.run_id)}/trades/${encodeURIComponent(trade.trade_id)}/chart`, { cache:"no-store" }); const body = await response.json(); if (requestId !== chartRequestId) return; if (!response.ok || !body.ok) throw new Error(body.error || "Trade chart unavailable"); selectedTradeChart = body.chart; drawTradeChart(); } catch (err) { if (requestId !== chartRequestId) return; const message = err instanceof TypeError && err.message === "Failed to fetch" ? "Replay server unavailable at 127.0.0.1:8765. Restart jevloop serve, then run the replay again." : err.message; clearTradeChart(message); $("trade-chart-title").textContent = trade.execution_tag; } }
+    async function loadTradeChart(trade) { clearTradeChart("Loading completed OHLC candles and ISX annotations…"); const requestId = chartRequestId; $("trade-chart-title").textContent = trade.execution_tag; if (!latestResult || !latestResult.run_id) { clearTradeChart("Run the replay again to enable candle detail."); return; } try { const response = await fetch(`/api/replay/${encodeURIComponent(latestResult.run_id)}/trades/${encodeURIComponent(trade.trade_id)}/chart`, { cache:"no-store" }); const body = await response.json(); if (requestId !== chartRequestId) return; if (!response.ok || !body.ok) throw new Error(body.error || "Trade chart unavailable"); selectedTradeChart = body.chart; drawTradeChart(); } catch (err) { if (requestId !== chartRequestId) return; const message = err instanceof TypeError && err.message === "Failed to fetch" ? "Replay server unavailable at " + window.location.host + ". Restart jevloop serve, then run the replay again." : err.message; clearTradeChart(message); $("trade-chart-title").textContent = trade.execution_tag; } }
     function renderLedger(trades) { $("ledger").innerHTML = trades.length ? trades.map((t, i) => `<tr data-index="${i}"><td>${esc(t.date)}</td><td>${esc(t.pair)}</td><td>${esc(t.side)}</td><td>${esc(stamp(t.entry_time_utc))}</td><td>${esc(stamp(t.exit_time_utc))}</td><td class="${t.result === "TARGET" ? "win" : t.result === "STOP" ? (Number(t.r_multiple || 0) > 0 ? "win" : "loss") : "open"}">${esc(t.result)}</td><td>${t.r_multiple == null ? "—" : Number(t.r_multiple).toFixed(2)}</td><td>${t.pnl_usd == null ? "—" : "$" + Number(t.pnl_usd).toFixed(2)}</td><td class="tag">${esc(t.execution_tag)}</td></tr>`).join("") : '<tr><td colspan="9" class="empty">No trades matched this range</td></tr>'; trades.forEach((_, i) => $("ledger").querySelector(`tr[data-index="${i}"]`)?.addEventListener("click", () => showDetail(trades[i], i))); }
     function showDetail(t, index) { document.querySelectorAll("tbody tr").forEach((row) => row.classList.remove("selected")); $("ledger").querySelector(`tr[data-index="${index}"]`)?.classList.add("selected"); const events = (t.lifecycle || []).map((e) => `<div class="event"><span>${esc(stamp(e.timestamp_utc))} · ${esc(e.event)}</span><b>${e.price == null ? "—" : Number(e.price).toFixed(4)}</b></div>`).join(""); $("detail").innerHTML = `<h2>${esc(t.execution_tag)}</h2><div class="sub">${esc(t.trigger_proxy)} · ${esc(t.result)} · ${esc(t.setup_id)}</div><div class="detail-grid">${[["Intent", stamp(t.intent_time_utc)],["S1", stamp(t.s1_time_utc)],["AOI", stamp(t.aoi_time_utc)],["S2 / X", stamp(t.s2_time_utc)],["Entry", stamp(t.entry_time_utc)],["Entry price", Number(t.entry_price).toFixed(4)],["Stop", Number(t.stop_price).toFixed(4)],["Target", Number(t.target_price).toFixed(4)],["Exit", stamp(t.exit_time_utc)],["Exit price", t.exit_price == null ? "—" : Number(t.exit_price).toFixed(4)]].map(([k,v]) => `<div class="kv"><small>${k}</small><b>${esc(v)}</b></div>`).join("")}</div><div class="events"><h2>Lifecycle</h2>${events || '<div class="empty">No lifecycle events</div>'}</div>`; loadTradeChart(t); }
     let activeJobId = null;
@@ -223,7 +258,7 @@
       setToast(state, state === "complete" ? "Replay complete" : state === "error" ? "Replay stopped" : state === "stalled" ? "Replay may be stalled" : "Replay running", message, progress, `${meta} · heartbeat ${age}s ago`);
     }
     function renderReplayResult(result) {
-      latestResult = result; clearTradeChart(); renderSummary(result.summary); renderChart(result.cumulative); renderLedger(result.trades);
+      latestResult = result; clearTradeChart(); renderSummary(result.summary); renderAnalytics(result.summary); renderChart(result.cumulative); renderLedger(result.trades);
       $("chart-label").textContent = `${result.bars.toLocaleString()} 1m bars · ${result.request.start_utc} → ${result.request.end_utc}`;
       $("run-meta").textContent = result.proxy_notice;
     }
@@ -264,7 +299,7 @@
         if (!response.ok || !body.ok || !body.job?.job_id) throw new Error(body.error || "Replay could not be started");
         activeJobId = body.job.job_id; renderJob(body.job); button.textContent = "Running…"; pollReplayJob(activeJobId);
       } catch (err) {
-        const message = err instanceof TypeError && err.message === "Failed to fetch" ? "Replay server unavailable at 127.0.0.1:8765. Restart jevloop serve, then run the replay again." : err.message;
+        const message = err instanceof TypeError && err.message === "Failed to fetch" ? "Replay server unavailable at " + window.location.host + ". Restart jevloop serve, then run the replay again." : err.message;
         error.textContent = message; error.style.display = "block"; setToast("error", "Replay could not start", message, null, "no job created"); button.disabled = false; button.textContent = "Run replay";
       }
     });  </script>

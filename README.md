@@ -48,15 +48,19 @@ the closed candle timestamp responsible for each transition.
 ## ISX historical replay
 
 Open `/isx-replay.html` after starting `jevloop serve` for the read-only ISX replay
-workspace. It supports UTC date ranges, deterministic offline fixtures, and
-Alpaca historical crypto 1-minute bars. The replay uses the same close-confirmed
+workspace. It supports UTC date ranges up to 90 days, deterministic offline
+fixtures, and Alpaca historical crypto 1-minute bars. Longer runs use the
+background job progress endpoint. The replay uses the same close-confirmed
 ISX structure primitives: 15-minute Intent, 1-minute S1, the 61.8%-79.0% AOI,
 and 1-minute S2/X. Historical X is labelled `1m-trigger-proxy`; it never claims
 an exact tick or 5-second fill and never submits an Alpaca order.
 
 Replay trades are tagged `ISX-REPLAY-<PAIR>-<SETUP>-<N>` and include entry/exit
 UTC, stop, default 4R target, +1R break-even, +2R to +1R profit lock, result,
-R multiple, P&L, and lifecycle events. Alpaca data is paginated server-side;
+R multiple, P&L, lifecycle events, and derived quality/risk metrics. The summary
+separates actual losses (`R < 0`) from 0R break-even exits and includes streaks,
+expectancy, profit factor, drawdown, daily exposure, and lifecycle exit counts.
+Alpaca data is paginated server-side;
 credentials never enter the browser. Select a ledger row to load its completed
 1-minute candle sequence, server-built 15-minute context candles, ISX markers,
 AOI band, EX/PX/EP levels, and lifecycle levels. The per-trade chart is loaded
