@@ -141,8 +141,17 @@ def _row_from_plan(
     bias_sweep: Any | None = None,
 ) -> dict[str, Any]:
     is_profit = transition.event == "target"
-    r_multiple = 3.0 if is_profit else -1.0 if transition.event == "stop" else None
+    if transition.state.exit_price is None:
+        r_multiple = None
+    else:
+        signed_move = (
+            transition.state.exit_price - plan.entry_price
+            if plan.direction == "long"
+            else plan.entry_price - transition.state.exit_price
+        )
+        r_multiple = signed_move / plan.risk_per_unit
     pnl = plan.max_loss_usd * r_multiple if r_multiple is not None else None
+    profit_loss = "Profit" if r_multiple is not None and r_multiple > 0 else "Loss" if r_multiple is not None and r_multiple < 0 else "Break-even" if r_multiple == 0 else "Open"
     return {
         "ok": True,
         "date": day.isoformat(),
@@ -161,13 +170,13 @@ def _row_from_plan(
         "exit_ts": transition.timestamp,
         "exit_price": transition.state.exit_price,
         "outcome": transition.event,
-        "profit_loss": "Profit" if is_profit else "Loss" if transition.event == "stop" else "Open",
+        "profit_loss": profit_loss,
         "simulated": False,
         "historical": True,
         "resolution": "1m trigger proxy",
         "r_multiple": r_multiple,
         "pnl_usd": pnl,
-        "transitions": [transition.event],
+        "transitions": [str(item.get("event")) for item in (lifecycle or [])] or [transition.event],
         "lifecycle": lifecycle or [],
         "chart_bars": [_bar_payload(bar) for bar in (chart_bars or [])],
         "intent_ts": bias_sweep.timestamp if bias_sweep is not None else None,
@@ -243,7 +252,7 @@ def replay_historical_range(
                             "event": transition.event,
                             "timestamp": transition.timestamp,
                             "timestamp_utc": _iso(datetime.fromtimestamp(transition.timestamp, tz=timezone.utc)),
-                            "price": transition.price,
+                            "price": transition.price if transition.price is not None else transition.state.current_stop,
                         }
                     )
                 if transition.state.status == "closed":

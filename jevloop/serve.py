@@ -17,7 +17,7 @@ import socketserver
 import threading
 import time
 from uuid import uuid4
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -45,7 +45,13 @@ BLUEPRINT_JOBS_LOCK = threading.RLock()
 
 
 def _job_snapshot(job: dict) -> dict:
-    return {key: value for key, value in job.items() if key != "future"}
+    snapshot = {key: value for key, value in job.items() if key != "future"}
+    snapshot["status"] = snapshot.get("state")
+    heartbeat = snapshot.get("heartbeat")
+    snapshot["updated_at_utc"] = datetime.fromtimestamp(heartbeat, tz=timezone.utc).isoformat().replace("+00:00", "Z") if heartbeat else None
+    snapshot.setdefault("processed", 0)
+    snapshot.setdefault("total", None)
+    return snapshot
 
 
 def _set_job(job_id: str, **changes) -> dict:
@@ -73,9 +79,9 @@ def _run_blueprint_job(job_id: str, payload: dict) -> None:
         BLUEPRINT_RUNS.put(run)
         _set_job(job_id, state="complete", stage="complete", progress=1.0, message="Replay complete", run_id=run.run_id, result=run.result)
     except (HistoricalReplayError, ValueError, KeyError) as exc:
-        _set_job(job_id, state="error", stage="error", progress=1.0, message=str(exc), error=str(exc))
+        _set_job(job_id, state="failed", stage="error", progress=1.0, message=str(exc), error=str(exc))
     except Exception as exc:  # pragma: no cover - defensive boundary for worker errors
-        _set_job(job_id, state="error", stage="error", progress=1.0, message="Replay failed", error=str(exc))
+        _set_job(job_id, state="failed", stage="error", progress=1.0, message="Replay failed", error=str(exc))
 
 
 def _new_blueprint_job(payload: dict) -> dict:

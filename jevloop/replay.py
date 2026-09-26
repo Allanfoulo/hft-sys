@@ -116,12 +116,21 @@ def replay_day(day: date, execution_model_tag: str = DEFAULT_EXECUTION_MODEL_TAG
     if transitions[-1].state.status != "closed":
         return {"ok": False, "date": day.isoformat(), "error": "fixture did not close at target"}
 
+    final_transition = transitions[-1]
+    exit_price = final_transition.state.exit_price
+    signed_move = (exit_price - plan.entry_price) if plan.direction == "long" else (plan.entry_price - exit_price)
+    r_multiple = signed_move / plan.risk_per_unit
+    profit_loss = "Profit" if r_multiple > 0 else "Loss" if r_multiple < 0 else "Break-even"
+
     lifecycle = [
         {
             "event": transition.event,
             "timestamp": transition.timestamp,
             "timestamp_utc": datetime.fromtimestamp(transition.timestamp, tz=timezone.utc).isoformat().replace("+00:00", "Z"),
-            "price": transition.price,
+            # Management transitions report their updated stop in state even
+            # when they do not close the position and therefore have no exit
+            # price of their own.
+            "price": transition.price if transition.price is not None else transition.state.current_stop,
         }
         for transition in transitions
     ]
@@ -140,14 +149,14 @@ def replay_day(day: date, execution_model_tag: str = DEFAULT_EXECUTION_MODEL_TAG
         "entry_price": plan.entry_price,
         "stop_price": plan.stop_price,
         "target_price": plan.target_price,
-        "exit_ts": transitions[-1].timestamp,
-        "exit_price": transitions[-1].state.exit_price,
+        "exit_ts": final_transition.timestamp,
+        "exit_price": exit_price,
         "max_loss_usd": plan.max_loss_usd,
-        "outcome": transitions[-1].event,
-        "profit_loss": "Loss" if transitions[-1].event == "stop" else "Profit",
+        "outcome": final_transition.event,
+        "profit_loss": profit_loss,
         "simulated": True,
-        "r_multiple": -1.0 if transitions[-1].event == "stop" else 3.0,
-        "pnl_usd": plan.max_loss_usd * (-1.0 if transitions[-1].event == "stop" else 3.0),
+        "r_multiple": r_multiple,
+        "pnl_usd": plan.max_loss_usd * r_multiple,
         "transitions": [transition.event for transition in transitions],
         "lifecycle": lifecycle,
         "chart_bars": [_bar_payload(bar) for bar in fifteen + one_minute + [refinement, trigger]],
@@ -190,7 +199,7 @@ def replay_range(
             "setups": len(successful),
             "trades": len(successful),
             "wins": sum(1 for row in successful if row["r_multiple"] > 0),
-            "losses": sum(1 for row in successful if row["r_multiple"] <= 0),
+            "losses": sum(1 for row in successful if row["r_multiple"] < 0),
             "total_r": sum(row["r_multiple"] for row in successful),
             "pnl_usd": sum(row["pnl_usd"] for row in successful),
         },

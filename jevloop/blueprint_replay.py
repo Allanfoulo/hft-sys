@@ -126,7 +126,14 @@ def _markers(row: dict[str, Any], lifecycle: list[dict[str, Any]]) -> list[dict[
         if name in {"break_even", "breakeven"}:
             entries.append(("break_even", event.get("timestamp"), event.get("price") or row.get("entry_price"), "Break-even"))
         elif name == "profit_lock":
-            entries.append(("profit_lock", event.get("timestamp"), event.get("price"), "Profit-lock"))
+            price = event.get("price")
+            if price is None:
+                entry = float(row.get("entry_price") or 0.0)
+                stop = float(row.get("stop_price") or entry)
+                risk = abs(entry - stop)
+                direction = str(row.get("direction", "long")).lower()
+                price = entry + 2.0 * risk if direction == "long" else entry - 2.0 * risk
+            entries.append(("profit_lock", event.get("timestamp"), price, "Profit-lock"))
         elif name == "target":
             entries.append(("target", event.get("timestamp"), event.get("price") or row.get("target_price"), "Target"))
         elif name == "stop":
@@ -158,6 +165,24 @@ def _levels(row: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _reference_trade(row: dict[str, Any]) -> dict[str, Any]:
+    outcome = str(row.get("outcome", "open")).upper()
+    return {
+        **row,
+        "pair": row.get("symbol", "BTC/USD"),
+        "side": str(row.get("direction", "long")).upper(),
+        "result": outcome,
+        "execution_tag": row.get("execution_model_tag", BLUEPRINT_VX_TAG),
+        "trigger_proxy": row.get("resolution", "1m trigger proxy"),
+        "entry_time_utc": _iso(row.get("entry_ts")),
+        "exit_time_utc": _iso(row.get("exit_ts")),
+        "intent_time_utc": _iso(row.get("intent_ts")),
+        "s1_time_utc": _iso(row.get("s1_ts")),
+        "aoi_time_utc": _iso(row.get("aoi_ts")),
+        "s2_time_utc": _iso(row.get("signal_ts")),
+    }
+
+
 @dataclass
 class BlueprintRun:
     run_id: str
@@ -171,16 +196,10 @@ class BlueprintRun:
         if payload is None:
             raise KeyError("unknown trade_id")
         bars = payload["bars_1m"] if timeframe == "1m" else payload["bars_15m"]
+        chart = payload["chart"]
         return {
             "ok": True,
-            "run_id": self.run_id,
-            "trade_id": trade_id,
-            "timeframe": timeframe,
-            "proxy_notice": PROXY_NOTICE,
-            "bars": bars,
-            "levels": payload["levels"],
-            "markers": payload["markers"],
-            "trade": payload["trade"],
+            "chart": {**chart, "selected_timeframe": timeframe},
         }
 
 
@@ -210,11 +229,27 @@ def _prepare_result(raw: dict[str, Any], *, public_tag: str, run_id: str) -> Blu
         row["lifecycle"] = lifecycle
         row.pop("public_model_tag", None)
         charts[trade_id] = {
-            "trade": row,
+            "trade": _reference_trade(row),
             "bars_1m": bars_1m,
             "bars_15m": bars_15m,
             "levels": _levels(row),
             "markers": _markers(row, lifecycle),
+        }
+        direction = str(row.get("direction", "long")).lower()
+        entry = float(row.get("entry_price") or 0)
+        risk = abs(entry - float(row.get("stop_price") or entry))
+        aoi_a = entry + (0.618 * risk if direction == "long" else -0.618 * risk)
+        aoi_b = entry + (0.79 * risk if direction == "long" else -0.79 * risk)
+        charts[trade_id]["chart"] = {
+            "candles": {"1m": bars_1m, "15m": bars_15m},
+            "levels": [
+                {"role": level["kind"], "name": level["label"], "price": level["price"]}
+                for level in charts[trade_id]["levels"]
+            ],
+            "aoi": {"low": min(aoi_a, aoi_b), "high": max(aoi_a, aoi_b)},
+            "markers": charts[trade_id]["markers"],
+            "window_start_utc": bars_1m[0]["timestamp_utc"] if bars_1m else _iso(row.get("entry_ts")),
+            "window_end_utc": bars_1m[-1]["timestamp_utc"] if bars_1m else _iso(row.get("exit_ts")),
         }
         rows.append(row)
     output["rows"] = rows
@@ -224,6 +259,21 @@ def _prepare_result(raw: dict[str, Any], *, public_tag: str, run_id: str) -> Blu
     summary["wins"] = summary["metrics"]["wins"]
     summary["losses"] = summary["metrics"]["losses"]
     output["summary"] = summary
+    output["trades"] = [_reference_trade(row) for row in rows if row.get("entry_ts")]
+    cumulative = []
+    running_r = 0.0
+    for row in output["trades"]:
+        if row.get("r_multiple") is None:
+            continue
+        running_r += float(row["r_multiple"])
+        cumulative.append({"date": row.get("date"), "r": running_r})
+    output["cumulative"] = cumulative
+    output["bars"] = sum(len(chart["bars_1m"]) for chart in charts.values())
+    output["request"] = {
+        "start_utc": f"{raw.get('start')}T00:00:00Z",
+        "end_utc": f"{raw.get('end')}T23:59:59Z",
+    }
+    output["resolution"] = "1m trigger proxy"
     return BlueprintRun(run_id, output, charts)
 
 

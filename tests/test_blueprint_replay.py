@@ -62,11 +62,10 @@ def test_fixture_chart_contains_bars_levels_markers_and_timeframes():
     trade_id = next(iter(run.charts))
     one_minute = run.chart(trade_id, "1m")
     context = run.chart(trade_id, "15m")
-    assert one_minute["proxy_notice"]
-    assert one_minute["bars"]
-    assert context["bars"]
-    assert {level["kind"] for level in one_minute["levels"]} == {"invalidation", "internal", "expansion", "target"}
-    assert {marker["kind"] for marker in one_minute["markers"]} >= {"intent", "s1", "aoi", "s2", "x", "target"}
+    assert one_minute["chart"]["candles"]["1m"]
+    assert context["chart"]["candles"]["15m"]
+    assert {level["role"] for level in one_minute["chart"]["levels"]} == {"invalidation", "internal", "expansion", "target"}
+    assert {marker["kind"] for marker in one_minute["chart"]["markers"]} >= {"intent", "s1", "aoi", "s2", "x", "break_even", "profit_lock", "target"}
 
 
 def test_chart_rejects_unknown_trade_or_timeframe():
@@ -113,9 +112,9 @@ def test_background_job_and_lazy_chart_routes(replay_server):
         replay_server + f"/api/replay/{result['run_id']}/trades/{row['trade_id']}/chart?timeframe=15m"
     )
     assert status == 200
-    assert chart["timeframe"] == "15m"
-    assert chart["bars"]
-    assert chart["trade"]["execution_model_tag"] == BLUEPRINT_VX_TAG
+    assert chart["chart"]["selected_timeframe"] == "15m"
+    assert chart["chart"]["candles"]["15m"]
+    assert chart["chart"]["markers"]
 
 
 def test_chart_route_rejects_unknown_run_and_timeframe(replay_server):
