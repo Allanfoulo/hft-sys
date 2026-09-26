@@ -16,6 +16,19 @@ from .session_strategy import LondonSweepEngine, jev_allows_entry
 REPLAY_SYMBOL = "BTC/USD"
 
 
+def _bar_payload(bar: Bar) -> dict:
+    return {
+        "timestamp": bar.start_ts,
+        "timestamp_utc": datetime.fromtimestamp(bar.start_ts, tz=timezone.utc).isoformat().replace("+00:00", "Z"),
+        "interval_s": bar.interval_s,
+        "open": bar.open,
+        "high": bar.high,
+        "low": bar.low,
+        "close": bar.close,
+        "volume": bar.volume,
+    }
+
+
 def _utc_start(day: date, hour: int, minute: int = 0) -> float:
     return datetime(day.year, day.month, day.day, hour, minute, tzinfo=timezone.utc).timestamp()
 
@@ -103,6 +116,15 @@ def replay_day(day: date, execution_model_tag: str = DEFAULT_EXECUTION_MODEL_TAG
     if transitions[-1].state.status != "closed":
         return {"ok": False, "date": day.isoformat(), "error": "fixture did not close at target"}
 
+    lifecycle = [
+        {
+            "event": transition.event,
+            "timestamp": transition.timestamp,
+            "timestamp_utc": datetime.fromtimestamp(transition.timestamp, tz=timezone.utc).isoformat().replace("+00:00", "Z"),
+            "price": transition.price,
+        }
+        for transition in transitions
+    ]
     return {
         "ok": True,
         "date": day.isoformat(),
@@ -127,6 +149,14 @@ def replay_day(day: date, execution_model_tag: str = DEFAULT_EXECUTION_MODEL_TAG
         "r_multiple": -1.0 if transitions[-1].event == "stop" else 3.0,
         "pnl_usd": plan.max_loss_usd * (-1.0 if transitions[-1].event == "stop" else 3.0),
         "transitions": [transition.event for transition in transitions],
+        "lifecycle": lifecycle,
+        "chart_bars": [_bar_payload(bar) for bar in fifteen + one_minute + [refinement, trigger]],
+        "intent_ts": engine.snapshot.bias_sweep.timestamp if engine.snapshot.bias_sweep else None,
+        "intent_price": engine.snapshot.bias_sweep.level if engine.snapshot.bias_sweep else None,
+        "s1_ts": setup.sweep.timestamp,
+        "s1_price": setup.sweep.level,
+        "aoi_ts": setup.refinement.start_ts,
+        "aoi_price": setup.trigger_price,
     }
 
 

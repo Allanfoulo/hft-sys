@@ -36,6 +36,19 @@ def _iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def _bar_payload(bar: Bar) -> dict[str, Any]:
+    return {
+        "timestamp": bar.start_ts,
+        "timestamp_utc": _iso(datetime.fromtimestamp(bar.start_ts, tz=timezone.utc)),
+        "interval_s": bar.interval_s,
+        "open": bar.open,
+        "high": bar.high,
+        "low": bar.low,
+        "close": bar.close,
+        "volume": bar.volume,
+    }
+
+
 def _bar_from_payload(item: dict[str, Any]) -> Bar:
     timestamp = item.get("t")
     if not timestamp:
@@ -115,7 +128,18 @@ def _aggregate(bars: list[Bar], interval_s: int) -> list[Bar]:
     return result
 
 
-def _row_from_plan(plan, signal, transition, *, day: date, symbol: str) -> dict[str, Any]:
+def _row_from_plan(
+    plan,
+    signal,
+    transition,
+    *,
+    day: date,
+    symbol: str,
+    lifecycle: list[dict[str, Any]] | None = None,
+    chart_bars: list[Bar] | None = None,
+    setup: Any | None = None,
+    bias_sweep: Any | None = None,
+) -> dict[str, Any]:
     is_profit = transition.event == "target"
     r_multiple = 3.0 if is_profit else -1.0 if transition.event == "stop" else None
     pnl = plan.max_loss_usd * r_multiple if r_multiple is not None else None
@@ -144,6 +168,14 @@ def _row_from_plan(plan, signal, transition, *, day: date, symbol: str) -> dict[
         "r_multiple": r_multiple,
         "pnl_usd": pnl,
         "transitions": [transition.event],
+        "lifecycle": lifecycle or [],
+        "chart_bars": [_bar_payload(bar) for bar in (chart_bars or [])],
+        "intent_ts": bias_sweep.timestamp if bias_sweep is not None else None,
+        "intent_price": bias_sweep.level if bias_sweep is not None else None,
+        "s1_ts": setup.sweep.timestamp if setup is not None else None,
+        "s1_price": setup.sweep.level if setup is not None else None,
+        "aoi_ts": setup.refinement.start_ts if setup is not None else None,
+        "aoi_price": setup.trigger_price if setup is not None else None,
     }
 
 
@@ -153,6 +185,7 @@ def replay_historical_range(
     execution_model_tag: str = DEFAULT_EXECUTION_MODEL_TAG,
     *,
     symbol: str = REPLAY_SYMBOL,
+    include_artifacts: bool = False,
 ) -> dict[str, Any]:
     """Replay authenticated Alpaca minute bars over an inclusive date range."""
     if end < start:
@@ -199,10 +232,20 @@ def replay_historical_range(
         day_bars = [bar for bar in bars_1m if day_start.timestamp() <= bar.start_ts < day_end.timestamp()]
         position: SweepPosition | None = None
         open_row: dict[str, Any] | None = None
+        last_setup = None
         for bar in day_bars:
             # Manage an existing position before looking for another entry.
             if position is not None:
                 transition = position.update(bar)
+                if open_row is not None and include_artifacts:
+                    open_row.setdefault("_lifecycle", []).append(
+                        {
+                            "event": transition.event,
+                            "timestamp": transition.timestamp,
+                            "timestamp_utc": _iso(datetime.fromtimestamp(transition.timestamp, tz=timezone.utc)),
+                            "price": transition.price,
+                        }
+                    )
                 if transition.state.status == "closed":
                     assert open_row is not None
                     open_row.update(
@@ -212,9 +255,16 @@ def replay_historical_range(
                             transition,
                             day=day,
                             symbol=symbol,
+                            lifecycle=open_row.get("_lifecycle"),
+                            chart_bars=day_bars if include_artifacts else None,
+                            setup=open_row.get("_setup"),
+                            bias_sweep=open_row.get("_bias_sweep"),
                         )
                     )
                     open_row.pop("_signal", None)
+                    open_row.pop("_lifecycle", None)
+                    open_row.pop("_setup", None)
+                    open_row.pop("_bias_sweep", None)
                     rows.append(open_row)
                     position = None
                     open_row = None
@@ -224,6 +274,8 @@ def replay_historical_range(
                 for sweep in sweeps_by_start.get(bar.start_ts, []):
                     engine.on_1m_sweep(sweep, position_open=position is not None)
                 refinement = engine.on_1m_bar(bar, position_open=position is not None)
+                if refinement is not None:
+                    last_setup = refinement
             # The minute bar that creates the refinement is not also used as
             # its trigger. The next minute is the documented 1m proxy for the
             # lower-resolution 5s/tick trigger.
@@ -242,7 +294,12 @@ def replay_historical_range(
             except ValueError:
                 continue
             position = SweepPosition(plan)
-            open_row = {"_signal": signal}
+            open_row = {
+                "_signal": signal,
+                "_setup": last_setup,
+                "_bias_sweep": engine.snapshot.bias_sweep,
+                "_lifecycle": [],
+            }
 
         if position is not None and open_row is not None:
             open_row.update(
@@ -271,9 +328,20 @@ def replay_historical_range(
                     "r_multiple": None,
                     "pnl_usd": None,
                     "transitions": [],
+                    "lifecycle": open_row.get("_lifecycle", []),
+                    "chart_bars": [_bar_payload(bar) for bar in day_bars] if include_artifacts else [],
+                    "intent_ts": open_row.get("_bias_sweep").timestamp if open_row.get("_bias_sweep") else None,
+                    "intent_price": open_row.get("_bias_sweep").level if open_row.get("_bias_sweep") else None,
+                    "s1_ts": open_row.get("_setup").sweep.timestamp if open_row.get("_setup") else None,
+                    "s1_price": open_row.get("_setup").sweep.level if open_row.get("_setup") else None,
+                    "aoi_ts": open_row.get("_setup").refinement.start_ts if open_row.get("_setup") else None,
+                    "aoi_price": open_row.get("_setup").trigger_price if open_row.get("_setup") else None,
                 }
             )
             open_row.pop("_signal", None)
+            open_row.pop("_setup", None)
+            open_row.pop("_bias_sweep", None)
+            open_row.pop("_lifecycle", None)
             rows.append(open_row)
 
     closed = [row for row in rows if row["r_multiple"] is not None]
