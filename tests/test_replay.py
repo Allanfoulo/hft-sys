@@ -197,6 +197,15 @@ def test_mt5_provider_reads_completed_one_minute_rates_without_orders():
     assert module.shutdown_called is True
 
 
+def test_mt5_source_replays_xauusd_through_injected_read_only_provider():
+    result = ReplayService(mt5_provider=FixtureMinuteBarsProvider()).run(
+        request(source="mt5", symbol="XAUUSD").to_dict()
+    )
+
+    assert result.summary.trades == 1
+    assert result.trades[0].entry_price > 2300
+
+
 def test_replay_reports_progress_stages_and_completion():
     events = []
     ReplayService().run(request().to_dict(), progress=events.append)
