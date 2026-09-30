@@ -17,6 +17,21 @@ class ReplaySource(str, Enum):
     MT5 = "mt5"
 
 
+class ReplaySession(str, Enum):
+    ALL = "all"
+    ASIA = "asia"
+    LONDON = "london"
+    NEW_YORK = "new_york"
+    CUSTOM = "custom"
+
+
+_FIXED_SESSION_WINDOWS: dict[ReplaySession, tuple[int, int]] = {
+    ReplaySession.ASIA: (0, 8 * 60),
+    ReplaySession.LONDON: (8 * 60, 13 * 60),
+    ReplaySession.NEW_YORK: (13 * 60, 21 * 60),
+}
+
+
 class ReplayResultKind(str, Enum):
     TARGET = "TARGET"
     STOP = "STOP"
@@ -89,6 +104,25 @@ def _utc_datetime(value: Any, name: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def _utc_minutes(value: Any, name: str) -> int:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{name} must be an HH:MM UTC time")
+    parts = value.strip().split(":")
+    if len(parts) != 2:
+        raise ValueError(f"{name} must be an HH:MM UTC time")
+    try:
+        hour, minute = int(parts[0]), int(parts[1])
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an HH:MM UTC time") from exc
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        raise ValueError(f"{name} must be an HH:MM UTC time")
+    return hour * 60 + minute
+
+
+def _format_minutes(minutes: int) -> str:
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
 @dataclass(frozen=True)
 class ReplayRequest:
     source: ReplaySource
@@ -102,6 +136,9 @@ class ReplayRequest:
     risk_usd: float = 100.0
     pivot_left: int = 1
     pivot_right: int = 1
+    session: ReplaySession = ReplaySession.ALL
+    session_start_utc: str | None = None
+    session_end_utc: str | None = None
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> "ReplayRequest":
@@ -114,6 +151,26 @@ class ReplayRequest:
         symbol = str(payload.get("symbol", "BTC/USD")).strip().upper()
         if not symbol:
             raise ValueError("symbol is required")
+        try:
+            session = ReplaySession(str(payload.get("session", "all")).lower())
+        except ValueError as exc:
+            raise ValueError("session must be 'all', 'asia', 'london', 'new_york', or 'custom'") from exc
+        session_start = payload.get("session_start_utc")
+        session_end = payload.get("session_end_utc")
+        if session is ReplaySession.CUSTOM:
+            start_minutes = _utc_minutes(session_start, "session_start_utc")
+            end_minutes = _utc_minutes(session_end, "session_end_utc")
+            if start_minutes == end_minutes:
+                raise ValueError("custom session start and end must be different")
+            session_start = _format_minutes(start_minutes)
+            session_end = _format_minutes(end_minutes)
+        elif session is not ReplaySession.ALL:
+            start_minutes, end_minutes = _FIXED_SESSION_WINDOWS[session]
+            session_start = _format_minutes(start_minutes)
+            session_end = _format_minutes(end_minutes)
+        else:
+            session_start = None
+            session_end = None
         start = _utc_datetime(payload.get("start_utc"), "start_utc")
         end = _utc_datetime(payload.get("end_utc"), "end_utc")
         if end <= start:
@@ -164,7 +221,37 @@ class ReplayRequest:
             risk_usd,
             pivot_left,
             pivot_right,
+            session,
+            session_start,
+            session_end,
         )
+
+    def session_window(self) -> tuple[int, int] | None:
+        if self.session is ReplaySession.ALL:
+            return None
+        if self.session is ReplaySession.CUSTOM:
+            assert self.session_start_utc is not None and self.session_end_utc is not None
+            return (
+                _utc_minutes(self.session_start_utc, "session_start_utc"),
+                _utc_minutes(self.session_end_utc, "session_end_utc"),
+            )
+        return _FIXED_SESSION_WINDOWS[self.session]
+
+    def allows_timestamp(self, timestamp: datetime) -> bool:
+        window = self.session_window()
+        if window is None:
+            return True
+        start, end = window
+        minute = timestamp.astimezone(timezone.utc).hour * 60 + timestamp.astimezone(timezone.utc).minute
+        return (start <= minute < end) if start < end else (minute >= start or minute < end)
+
+    def session_label(self) -> str:
+        if self.session is ReplaySession.ALL:
+            return "all sessions"
+        if self.session is ReplaySession.CUSTOM:
+            return f"custom {self.session_start_utc}-{self.session_end_utc} UTC"
+        start, end = self.session_window()  # type: ignore[misc]
+        return f"{self.session.value.replace('_', ' ')} {_format_minutes(start)}-{_format_minutes(end)} UTC"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -179,6 +266,9 @@ class ReplayRequest:
             "risk_usd": self.risk_usd,
             "pivot_left": self.pivot_left,
             "pivot_right": self.pivot_right,
+            "session": self.session.value,
+            "session_start_utc": self.session_start_utc,
+            "session_end_utc": self.session_end_utc,
         }
 
 
@@ -358,6 +448,7 @@ class ReplayResult:
     cumulative: list[dict[str, Any]]
     bars: int
     run_id: str = ""
+    skipped_signals: int = 0
     proxy_notice: str = (
         "Historical execution uses a completed 1-minute trigger proxy and does "
         "not claim exact tick or 5-second fills."
@@ -371,5 +462,6 @@ class ReplayResult:
             "cumulative": self.cumulative,
             "bars": self.bars,
             "run_id": self.run_id,
+            "skipped_signals": self.skipped_signals,
             "proxy_notice": self.proxy_notice,
         }

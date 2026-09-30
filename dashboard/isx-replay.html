@@ -141,6 +141,9 @@
         <div class="field"><label for="end">To UTC</label><input id="end" type="datetime-local" step="60" /></div>
         <div class="field"><label for="source">Data source</label><select id="source"><option value="fixture">Deterministic fixture - offline</option><option value="alpaca">Alpaca historical - crypto 1m</option><option value="mt5">MT5 terminal - broker 1m</option></select></div>
         <div class="field"><label for="symbol">Instrument</label><select id="symbol"><option value="BTC/USD" data-sources="fixture,alpaca,mt5">BTC/USD</option><option value="ETH/USD" data-sources="fixture,alpaca,mt5">ETH/USD</option><option value="XAUUSD" data-sources="fixture,mt5">XAUUSD</option><option value="__custom__">Custom broker symbol…</option></select><input id="custom-symbol" placeholder="e.g. XAUUSD.a" autocomplete="off" hidden /></div>
+        <div class="field"><label for="session">Session UTC</label><select id="session"><option value="all">All sessions</option><option value="asia">Asia · 00:00–08:00</option><option value="london">London · 08:00–13:00</option><option value="new_york">New York · 13:00–21:00</option><option value="custom">Custom UTC window</option></select></div>
+        <div class="field session-custom" id="session-start-field" hidden><label for="session-start">Custom from UTC</label><input id="session-start" type="time" value="13:00" step="60" /></div>
+        <div class="field session-custom" id="session-end-field" hidden><label for="session-end">Custom to UTC</label><input id="session-end" type="time" value="21:00" step="60" /></div>
         <div class="field"><label for="target">Target R</label><input id="target" type="number" min="0.1" step="0.1" value="4" /></div>
         <div class="field"><label for="risk">Risk USD</label><input id="risk" type="number" min="1" step="1" value="100" /></div>
         <div class="field"><label for="be">Break-even R</label><input id="be" type="number" min="0.1" step="0.1" value="1" /></div>
@@ -177,7 +180,7 @@
     }
     function percent(value) { return `${(Number(value || 0) * 100).toFixed(1)}%`; }
     function signedR(value) { const number = Number(value || 0); return `${number >= 0 ? "+" : ""}${number.toFixed(2)}R`; }
-    function renderAnalytics(summary) {
+    function renderAnalytics(summary, skippedSignals = 0) {
       const metrics = summary.metrics || {};
       const streak = metrics.current_streak_type && metrics.current_streak_type !== "NONE" ? `${metrics.current_streak} ${metrics.current_streak_type.replaceAll("_", " ")}` : "—";
       $("analytics-grid").innerHTML = [
@@ -201,6 +204,7 @@
         metric("Profit-lock moves", metrics.profit_lock_moves ?? 0),
         metric("Max trades / day", metrics.max_trades_per_day ?? 0),
         metric("Max losses / day", metrics.max_losses_per_day ?? 0, "neg"),
+        metric("Skipped X signals", skippedSignals, ""),
       ].join("");
     }
     function renderChart(points) {
@@ -232,6 +236,11 @@
       svg.innerHTML = `${grid}${aoi}${levels}${candles}${markers}`; svg.hidden = false; $("trade-chart-empty").hidden = true; $("trade-chart-legend").hidden = false; $("trade-chart-label").textContent = `${timeframe} · ${bars.length.toLocaleString()} candles · ${chart.window_start_utc.slice(0,16).replace("T"," ")} → ${chart.window_end_utc.slice(0,16).replace("T"," ")} UTC`;
     }
     async function loadTradeChart(trade) { clearTradeChart("Loading completed OHLC candles and ISX annotations…"); const requestId = chartRequestId; $("trade-chart-title").textContent = trade.execution_tag; if (!latestResult || !latestResult.run_id) { clearTradeChart("Run the replay again to enable candle detail."); return; } try { const response = await fetch(`/api/replay/${encodeURIComponent(latestResult.run_id)}/trades/${encodeURIComponent(trade.trade_id)}/chart`, { cache:"no-store" }); const body = await response.json(); if (requestId !== chartRequestId) return; if (!response.ok || !body.ok) throw new Error(body.error || "Trade chart unavailable"); selectedTradeChart = body.chart; drawTradeChart(); } catch (err) { if (requestId !== chartRequestId) return; const message = err instanceof TypeError && err.message === "Failed to fetch" ? "Replay server unavailable at " + window.location.host + ". Restart jevloop serve, then run the replay again." : err.message; clearTradeChart(message); $("trade-chart-title").textContent = trade.execution_tag; } }
+    function updateSessionControls() {
+      const custom = $("session").value === "custom";
+      $("session-start-field").hidden = !custom;
+      $("session-end-field").hidden = !custom;
+    }
     function renderLedger(trades) { $("ledger").innerHTML = trades.length ? trades.map((t, i) => `<tr data-index="${i}"><td>${esc(t.date)}</td><td>${esc(t.pair)}</td><td>${esc(t.side)}</td><td>${esc(stamp(t.entry_time_utc))}</td><td>${esc(stamp(t.exit_time_utc))}</td><td class="${t.result === "TARGET" ? "win" : t.result === "STOP" ? (Number(t.r_multiple || 0) > 0 ? "win" : "loss") : "open"}">${esc(t.result)}</td><td>${t.r_multiple == null ? "—" : Number(t.r_multiple).toFixed(2)}</td><td>${t.pnl_usd == null ? "—" : "$" + Number(t.pnl_usd).toFixed(2)}</td><td class="tag">${esc(t.execution_tag)}</td></tr>`).join("") : '<tr><td colspan="9" class="empty">No trades matched this range</td></tr>'; trades.forEach((_, i) => $("ledger").querySelector(`tr[data-index="${i}"]`)?.addEventListener("click", () => showDetail(trades[i], i))); }
     function showDetail(t, index) { document.querySelectorAll("tbody tr").forEach((row) => row.classList.remove("selected")); $("ledger").querySelector(`tr[data-index="${index}"]`)?.classList.add("selected"); const events = (t.lifecycle || []).map((e) => `<div class="event"><span>${esc(stamp(e.timestamp_utc))} · ${esc(e.event)}</span><b>${e.price == null ? "—" : Number(e.price).toFixed(4)}</b></div>`).join(""); $("detail").innerHTML = `<h2>${esc(t.execution_tag)}</h2><div class="sub">${esc(t.trigger_proxy)} · ${esc(t.result)} · ${esc(t.setup_id)}</div><div class="detail-grid">${[["Intent", stamp(t.intent_time_utc)],["S1", stamp(t.s1_time_utc)],["AOI", stamp(t.aoi_time_utc)],["S2 / X", stamp(t.s2_time_utc)],["Entry", stamp(t.entry_time_utc)],["Entry price", Number(t.entry_price).toFixed(4)],["Stop", Number(t.stop_price).toFixed(4)],["Target", Number(t.target_price).toFixed(4)],["Exit", stamp(t.exit_time_utc)],["Exit price", t.exit_price == null ? "—" : Number(t.exit_price).toFixed(4)]].map(([k,v]) => `<div class="kv"><small>${k}</small><b>${esc(v)}</b></div>`).join("")}</div><div class="events"><h2>Lifecycle</h2>${events || '<div class="empty">No lifecycle events</div>'}</div>`; loadTradeChart(t); }
     let activeJobId = null;
@@ -258,9 +267,10 @@
       setToast(state, state === "complete" ? "Replay complete" : state === "error" ? "Replay stopped" : state === "stalled" ? "Replay may be stalled" : "Replay running", message, progress, `${meta} · heartbeat ${age}s ago`);
     }
     function renderReplayResult(result) {
-      latestResult = result; clearTradeChart(); renderSummary(result.summary); renderAnalytics(result.summary); renderChart(result.cumulative); renderLedger(result.trades);
+      latestResult = result; clearTradeChart(); renderSummary(result.summary); renderAnalytics(result.summary, result.skipped_signals || 0); renderChart(result.cumulative); renderLedger(result.trades);
       $("chart-label").textContent = `${result.bars.toLocaleString()} 1m bars · ${result.request.start_utc} → ${result.request.end_utc}`;
-      $("run-meta").textContent = result.proxy_notice;
+      const sessionLabel = result.request.session === "all" ? "all sessions" : `${result.request.session.replaceAll("_", " ")} UTC`;
+      $("run-meta").textContent = `${result.proxy_notice} · ${sessionLabel} · ${result.skipped_signals || 0} X signals skipped by session filter`;
     }
     async function pollReplayJob(jobId) {
       try {
@@ -306,6 +316,7 @@
     }
     function updateSourceNotice() {
       updateInstrumentOptions();
+      updateSessionControls();
       const source = $("source").value;
       if (source === "mt5") {
         $("source-notice-label").textContent = "MT5 mode.";
@@ -320,6 +331,7 @@
     }
     $("source").addEventListener("change", updateSourceNotice);
     $("symbol").addEventListener("change", updateInstrumentOptions);
+    $("session").addEventListener("change", updateSessionControls);
     updateSourceNotice();
     $("chart-timeframe").addEventListener("change", drawTradeChart);
     $("run").addEventListener("click", async () => {
@@ -328,7 +340,7 @@
       try {
         const symbol = currentSymbol();
         if (!symbol) throw new Error("Choose an instrument or enter a custom broker symbol");
-        const payload = { source: $("source").value, symbol, start_utc: isoFromInput($("start").value), end_utc: isoFromInput($("end").value), target_r: Number($("target").value), breakeven_r: Number($("be").value), profit_lock_trigger_r: Number($("lock-trigger").value), profit_lock_r: Number($("lock-to").value), risk_usd: Number($("risk").value) };
+        const payload = { source: $("source").value, symbol, session: $("session").value, session_start_utc: $("session-start").value, session_end_utc: $("session-end").value, start_utc: isoFromInput($("start").value), end_utc: isoFromInput($("end").value), target_r: Number($("target").value), breakeven_r: Number($("be").value), profit_lock_trigger_r: Number($("lock-trigger").value), profit_lock_r: Number($("lock-to").value), risk_usd: Number($("risk").value) };
         const response = await fetch("/api/replay/jobs", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) });
         let body = null; try { body = await response.json(); } catch (_) { body = {}; }
         if (!response.ok || !body.ok || !body.job?.job_id) throw new Error(body.error || "Replay could not be started");

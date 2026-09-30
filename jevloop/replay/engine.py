@@ -77,6 +77,7 @@ class ReplayEngine:
         setup: _Setup | None = None
         open_trade: ReplayTrade | None = None
         trade_number = 0
+        skipped_signals = 0
         fifteen_cursor = 0
 
         progress_interval = max(1, len(bars) // 100)
@@ -184,6 +185,11 @@ class ReplayEngine:
             if setup.s2_time is None or setup.entry_index is None:
                 continue
 
+            if not request.allows_timestamp(bar.timestamp):
+                skipped_signals += 1
+                setup.phase = ISXPhase.EXECUTED
+                continue
+
             trade_number += 1
             open_trade = self._open_trade(
                 request,
@@ -200,7 +206,7 @@ class ReplayEngine:
         if open_trade is not None:
             trades.append(open_trade)
 
-        return self._result(request, bars, trades)
+        return self._result(request, bars, trades, skipped_signals)
 
     def _first_shift(self, bars, after, intent, opposite):
         direction = intent
@@ -315,7 +321,7 @@ class ReplayEngine:
         return f"ISX-{direction.value[:1].upper()}-{timestamp.strftime('%Y%m%dT%H%M%S')}"
 
     @staticmethod
-    def _result(request, bars, trades):
+    def _result(request, bars, trades, skipped_signals=0):
         closed = [trade for trade in trades if trade.r_multiple is not None]
         wins = sum(1 for trade in closed if trade.r_multiple and trade.r_multiple > 0)
         losses = sum(1 for trade in closed if trade.r_multiple is not None and trade.r_multiple < 0)
@@ -350,7 +356,7 @@ class ReplayEngine:
             breakevens,
             metrics,
         )
-        return ReplayResult(request, summary, trades, cumulative, len(bars))
+        return ReplayResult(request, summary, trades, cumulative, len(bars), skipped_signals=skipped_signals)
 
     @staticmethod
     def _metrics(closed, risk_usd):

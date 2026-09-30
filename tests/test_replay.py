@@ -14,6 +14,7 @@ from jevloop.replay.models import (
     ReplayLifecycleEvent,
     ReplayRequest,
     ReplayResultKind,
+    ReplaySession,
     ReplaySide,
     ReplayTrade,
 )
@@ -51,6 +52,43 @@ def test_replay_request_requires_utc_and_uses_isx_lifecycle_defaults():
         request(start_utc="2026-09-24T00:00:00")
     with pytest.raises(ValueError, match="after"):
         request(end_utc="2026-09-23T00:00:00Z")
+
+
+def test_replay_session_windows_are_utc_and_round_trip():
+    assert request(session="asia").session_window() == (0, 480)
+    london = request(session="london")
+    assert london.session_window() == (480, 780)
+    assert london.session_start_utc == "08:00"
+    assert london.session_end_utc == "13:00"
+    assert london.allows_timestamp(datetime(2026, 9, 24, 8, 0, tzinfo=UTC))
+    assert not london.allows_timestamp(datetime(2026, 9, 24, 13, 0, tzinfo=UTC))
+    custom = request(
+        session="custom",
+        session_start_utc="22:00",
+        session_end_utc="02:00",
+    )
+    assert custom.session_window() == (1320, 120)
+    assert custom.allows_timestamp(datetime(2026, 9, 24, 23, 59, tzinfo=UTC))
+    assert custom.allows_timestamp(datetime(2026, 9, 25, 1, 0, tzinfo=UTC))
+    assert not custom.allows_timestamp(datetime(2026, 9, 24, 12, 0, tzinfo=UTC))
+    assert ReplayRequest.from_payload(custom.to_dict()).to_dict() == custom.to_dict()
+
+
+def test_replay_session_validation_rejects_bad_custom_windows():
+    with pytest.raises(ValueError, match="session must"):
+        request(session="tokyo")
+    with pytest.raises(ValueError, match="HH:MM"):
+        request(session="custom", session_start_utc="25:00", session_end_utc="02:00")
+    with pytest.raises(ValueError, match="different"):
+        request(session="custom", session_start_utc="09:00", session_end_utc="09:00")
+
+
+def test_replay_session_filter_skips_valid_x_outside_window():
+    result = ReplayService().run(request(session="new_york").to_dict())
+    assert result.trades == []
+    assert result.skipped_signals == 1
+    assert result.to_dict()["request"]["session"] == ReplaySession.NEW_YORK.value
+    assert result.to_dict()["skipped_signals"] == 1
 
 
 def test_replay_request_allows_ninety_days_but_rejects_longer_ranges():

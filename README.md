@@ -68,6 +68,13 @@ AOI band, EX/PX/EP levels, and lifecycle levels. The per-trade chart is loaded
 on demand from the cached replay run so longer date ranges do not send every
 candle to the browser at once.
 
+Use the `Session UTC` selector to compare all sessions, Asia (00:00-08:00
+UTC), London (08:00-13:00 UTC), New York (13:00-21:00 UTC), or a custom UTC
+window. The filter is applied at the completed 1-minute X trigger, after the
+ISX sequence has qualified; the result reports how many valid X signals were
+skipped outside the selected window. These fixed labels do not adjust for
+daylight-saving changes.
+
 For XAUUSD, choose the offline fixture to review the deterministic flow without
 external services, or choose `MT5 terminal - broker 1m` to read the broker's
 symbol and history from a connected MetaTrader 5 terminal. Install the optional
