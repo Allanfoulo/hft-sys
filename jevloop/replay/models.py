@@ -14,6 +14,7 @@ MAX_REPLAY_DAYS = 90
 class ReplaySource(str, Enum):
     FIXTURE = "fixture"
     ALPACA = "alpaca"
+    MT5 = "mt5"
 
 
 class ReplayResultKind(str, Enum):
@@ -109,7 +110,7 @@ class ReplayRequest:
         try:
             source = ReplaySource(str(payload.get("source", "fixture")).lower())
         except ValueError as exc:
-            raise ValueError("source must be 'fixture' or 'alpaca'") from exc
+            raise ValueError("source must be 'fixture', 'alpaca', or 'mt5'") from exc
         symbol = str(payload.get("symbol", "BTC/USD")).strip().upper()
         if not symbol:
             raise ValueError("symbol is required")

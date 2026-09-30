@@ -15,7 +15,12 @@ from ..assets import UnknownSymbolError, resolve_symbol
 from ..execution.alpaca import client_from_env
 from ..isx.models import Candle
 from .chart import build_trade_chart
-from .data import AlpacaMinuteBarsProvider, FixtureMinuteBarsProvider, MinuteBarsProvider
+from .data import (
+    AlpacaMinuteBarsProvider,
+    FixtureMinuteBarsProvider,
+    MT5MinuteBarsProvider,
+    MinuteBarsProvider,
+)
 from .engine import ReplayEngine
 from .models import ReplayRequest, ReplayResult, ReplaySource
 
@@ -43,9 +48,11 @@ class ReplayService:
         self,
         fixture_provider: MinuteBarsProvider | None = None,
         client_factory: Callable[..., object] | None = None,
+        mt5_provider: MinuteBarsProvider | None = None,
     ):
         self.fixture_provider = fixture_provider or FixtureMinuteBarsProvider()
         self.client_factory = client_factory or client_from_env
+        self.mt5_provider = mt5_provider or MT5MinuteBarsProvider()
         self._runs: OrderedDict[str, tuple[ReplayResult, tuple[Candle, ...]]] = OrderedDict()
         self._max_cached_runs = 8
 
@@ -66,19 +73,41 @@ class ReplayService:
             request = ReplayRequest.from_payload(payload)
         except ValueError as exc:
             raise ReplayValidationError(str(exc)) from exc
-        try:
-            spec = resolve_symbol(request.symbol)
-        except UnknownSymbolError as exc:
-            raise ReplayValidationError(str(exc)) from exc
-        if not spec.is_24_7:
-            raise ReplayValidationError("ISX replay currently supports crypto pairs only")
+        is_gold = request.symbol.replace("/", "") == "XAUUSD"
+        spec = None
+        if not is_gold:
+            try:
+                spec = resolve_symbol(request.symbol)
+            except UnknownSymbolError as exc:
+                if request.source is ReplaySource.MT5:
+                    # MT5 brokers may append suffixes such as XAUUSD.a; the
+                    # terminal is the authority for whether that symbol exists.
+                    spec = None
+                else:
+                    raise ReplayValidationError(str(exc)) from exc
+        if request.source is ReplaySource.ALPACA:
+            if spec is None or spec.asset_class != "crypto":
+                raise ReplayValidationError(
+                    "Alpaca historical replay supports crypto pairs only; use MT5 historical for XAUUSD"
+                )
+        elif request.source is ReplaySource.FIXTURE:
+            if not is_gold and (spec is None or spec.asset_class != "crypto"):
+                raise ReplayValidationError(
+                    "fixture replay supports crypto pairs and XAUUSD"
+                )
 
         try:
             if request.source is ReplaySource.FIXTURE:
                 provider = self.fixture_provider
+                provider_symbol = request.symbol
+            elif request.source is ReplaySource.MT5:
+                provider = self.mt5_provider
+                provider_symbol = request.symbol
             else:
+                assert spec is not None
                 client = self.client_factory(symbol=spec.symbol, live=False)
                 provider = AlpacaMinuteBarsProvider(client)
+                provider_symbol = spec.symbol
             if progress:
                 progress({
                     "stage": "fetching",
@@ -87,7 +116,7 @@ class ReplayService:
                     "current_time_utc": None,
                     "message": "Loading completed 1-minute historical bars",
                 })
-            bars = provider.get_bars(spec.symbol, request.start_utc, request.end_utc)
+            bars = provider.get_bars(provider_symbol, request.start_utc, request.end_utc)
         except ReplayError:
             raise
         except Exception as exc:

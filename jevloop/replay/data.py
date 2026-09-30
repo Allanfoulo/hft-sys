@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
+import importlib
+import os
 from typing import Protocol
 
 from ..isx.models import Candle
@@ -38,7 +40,13 @@ def _bucket(timestamp: datetime, opens: float, high: float, low: float, close: f
     return result
 
 
-def _fixture_day(day: datetime, day_offset: float) -> list[Candle]:
+def _fixture_day(
+    day: datetime,
+    day_offset: float,
+    *,
+    price_offset: float = 0.0,
+    price_scale: float = 1.0,
+) -> list[Candle]:
     """Create a compact deterministic day with one complete ISX trade.
 
     Six 15-minute bars establish the bullish structure. The following
@@ -46,6 +54,9 @@ def _fixture_day(day: datetime, day_offset: float) -> list[Candle]:
     S2, and a move through the default 4R target.
     """
     start = day.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+    def price(value: float) -> float:
+        return price_offset + (value + day_offset) * price_scale
+
     specs = [
         (11, 9, 10),
         (13, 10, 12),
@@ -57,35 +68,40 @@ def _fixture_day(day: datetime, day_offset: float) -> list[Candle]:
     result: list[Candle] = []
     previous = 10.0 + day_offset
     for index, (high, low, close) in enumerate(specs):
-        high += day_offset
-        low += day_offset
-        close += day_offset
+        high = price(high)
+        low = price(low)
+        close = price(close)
         result.extend(_bucket(start + timedelta(minutes=index * 15), previous, high, low, close))
         previous = close
 
     closes = [10, 12, 10.5, 11, 8.8, 9.1, 9.4, 10.5, 13.2, 14, 16, 20, 26, 30, 35]
-    previous = closes[0] + day_offset
+    previous = price(closes[0])
     trigger_start = start + timedelta(minutes=90)
     for index, close in enumerate(closes):
-        close += day_offset
+        close = price(close)
         open_ = previous
-        high = max(open_, close) + 0.2
-        low = min(open_, close) - 0.2
+        high = max(open_, close) + (0.2 * price_scale)
+        low = min(open_, close) - (0.2 * price_scale)
         if index == 1:
-            high = 13.0 + day_offset
-            low = 11.8 + day_offset
+            high = price(13.0)
+            low = price(11.8)
         if index == 2:
-            low = 10.2 + day_offset
+            low = price(10.2)
         result.append(_bar(trigger_start + timedelta(minutes=index), open_, high, low, close))
         previous = close
 
     tail_start = trigger_start + timedelta(minutes=15)
-    result.extend(_bucket(tail_start, previous, 36 + day_offset, 34 + day_offset, 35 + day_offset))
+    result.extend(_bucket(tail_start, previous, price(36), price(34), price(35)))
     return result
 
 
 class FixtureMinuteBarsProvider:
-    """Offline, deterministic source used by the UI and fixture tests."""
+    """Offline, deterministic source used by the UI and fixture tests.
+
+    ``XAUUSD`` is deliberately synthetic and is priced in a gold-like range
+    so chart scales and stops look like the MT5 instrument. It is not a claim
+    about broker history; use the MT5 source for that.
+    """
 
     def get_bars(self, symbol: str, start_utc: datetime, end_utc: datetime) -> Sequence[Candle]:
         if not symbol:
@@ -95,8 +111,15 @@ class FixtureMinuteBarsProvider:
         bars: list[Candle] = []
         day = start.replace(hour=0, minute=0, second=0, microsecond=0)
         offset = 0.0
+        is_gold = symbol.strip().upper().replace("/", "") == "XAUUSD"
         while day < end:
-            bars.extend(_fixture_day(day, offset))
+            bars.extend(
+                _fixture_day(
+                    day,
+                    offset,
+                    price_offset=2300.0 if is_gold else 0.0,
+                )
+            )
             day += timedelta(days=1)
             offset += 0.5
         return [bar for bar in bars if start <= bar.timestamp < end]
@@ -122,3 +145,70 @@ class AlpacaMinuteBarsProvider:
             if not page_token or not page:
                 break
         return result
+
+
+class MT5MinuteBarsProvider:
+    """Read completed 1-minute bars from a connected MetaTrader 5 terminal.
+
+    The dependency is optional so fixture and Alpaca replay remain usable on
+    machines without MT5. The provider is read-only: it calls ``copy_rates_range``
+    and never sends orders.
+    """
+
+    def __init__(self, mt5_module=None, terminal_path: str | None = None):
+        self._mt5_module = mt5_module
+        self.terminal_path = terminal_path or os.environ.get("MT5_TERMINAL_PATH")
+
+    def _module(self):
+        if self._mt5_module is None:
+            try:
+                self._mt5_module = importlib.import_module("MetaTrader5")
+            except ImportError as exc:
+                raise RuntimeError(
+                    "MetaTrader5 Python package is not installed; install the optional mt5 dependency"
+                ) from exc
+        return self._mt5_module
+
+    def get_bars(self, symbol: str, start_utc: datetime, end_utc: datetime) -> Sequence[Candle]:
+        mt5 = self._module()
+        initialize_kwargs = {"path": self.terminal_path} if self.terminal_path else {}
+        initialized = bool(mt5.initialize(**initialize_kwargs))
+        if not initialized:
+            last_error = getattr(mt5, "last_error", lambda: "unknown MT5 initialization error")()
+            raise RuntimeError(f"MT5 terminal could not be initialized: {last_error}")
+        try:
+            if hasattr(mt5, "symbol_select") and not mt5.symbol_select(symbol, True):
+                last_error = getattr(mt5, "last_error", lambda: "symbol unavailable")()
+                raise RuntimeError(f"MT5 symbol {symbol} is unavailable: {last_error}")
+            timeframe = getattr(mt5, "TIMEFRAME_M1", 1)
+            rates = mt5.copy_rates_range(
+                symbol,
+                timeframe,
+                start_utc.astimezone(timezone.utc),
+                end_utc.astimezone(timezone.utc),
+            )
+            if rates is None:
+                last_error = getattr(mt5, "last_error", lambda: "no rates returned")()
+                raise RuntimeError(f"MT5 historical bars unavailable: {last_error}")
+            bars: list[Candle] = []
+            for row in rates:
+                raw_time = row["time"]
+                timestamp = (
+                    raw_time.astimezone(timezone.utc)
+                    if isinstance(raw_time, datetime)
+                    else datetime.fromtimestamp(float(raw_time), timezone.utc)
+                )
+                if not start_utc <= timestamp < end_utc:
+                    continue
+                bars.append(
+                    _bar(
+                        timestamp,
+                        float(row["open"]),
+                        float(row["high"]),
+                        float(row["low"]),
+                        float(row["close"]),
+                    )
+                )
+            return sorted(bars, key=lambda bar: bar.timestamp)
+        finally:
+            mt5.shutdown()

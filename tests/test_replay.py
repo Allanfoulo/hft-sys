@@ -4,7 +4,11 @@ import time
 import pytest
 
 from jevloop.isx.models import Candle
-from jevloop.replay.data import AlpacaMinuteBarsProvider, FixtureMinuteBarsProvider
+from jevloop.replay.data import (
+    AlpacaMinuteBarsProvider,
+    FixtureMinuteBarsProvider,
+    MT5MinuteBarsProvider,
+)
 from jevloop.replay.engine import ReplayEngine, aggregate_15m
 from jevloop.replay.models import (
     ReplayLifecycleEvent,
@@ -139,6 +143,58 @@ def test_fixture_replay_is_deterministic_and_tagged():
     assert trade.ex_price is not None
     assert trade.px_price is not None
     assert trade.ep_price is not None
+
+
+def test_xauusd_fixture_replay_is_available_and_gold_scaled():
+    result = ReplayService().run(
+        request(symbol="XAUUSD", end_utc="2026-09-25T00:00:00Z").to_dict()
+    )
+
+    assert result.summary.trades == 1
+    trade = result.trades[0]
+    assert trade.symbol == "XAUUSD"
+    assert trade.execution_tag.startswith("ISX-REPLAY-XAUUSD-")
+    assert trade.entry_price > 2300
+    assert trade.result is ReplayResultKind.TARGET
+
+
+def test_alpaca_replay_rejects_xauusd_with_source_guidance():
+    with pytest.raises(ReplayValidationError, match="MT5 historical"):
+        ReplayService().run(request(source="alpaca", symbol="XAUUSD").to_dict())
+
+
+def test_mt5_provider_reads_completed_one_minute_rates_without_orders():
+    class FakeMT5:
+        TIMEFRAME_M1 = 1
+
+        def __init__(self):
+            self.initialized = False
+            self.shutdown_called = False
+
+        def initialize(self, **kwargs):
+            self.initialized = True
+            return True
+
+        def symbol_select(self, symbol, enabled):
+            assert symbol == "XAUUSD"
+            assert enabled is True
+            return True
+
+        def copy_rates_range(self, symbol, timeframe, start, end):
+            assert symbol == "XAUUSD"
+            assert timeframe == self.TIMEFRAME_M1
+            return [
+                {"time": int(DAY.timestamp()), "open": 2300, "high": 2302, "low": 2299, "close": 2301},
+                {"time": int((DAY + timedelta(minutes=1)).timestamp()), "open": 2301, "high": 2303, "low": 2300, "close": 2302},
+            ]
+
+        def shutdown(self):
+            self.shutdown_called = True
+
+    module = FakeMT5()
+    bars = MT5MinuteBarsProvider(module).get_bars("XAUUSD", DAY, DAY + timedelta(minutes=2))
+    assert [bar.close for bar in bars] == [2301, 2302]
+    assert module.shutdown_called is True
 
 
 def test_replay_reports_progress_stages_and_completion():

@@ -133,14 +133,14 @@
     <section class="hero">
       <div class="eyebrow">execution model&nbsp; / &nbsp;ISX close-confirmed sequence</div>
       <h1>Replay a range. See every decision.</h1>
-      <p>Run the tagged 15m bias, 1m refinement, and lower-timeframe trigger sequence over a UTC date range. Historical mode reads Alpaca minute bars without submitting orders; fixture mode is for deterministic model checks.</p>
+      <p>Run the tagged 15m bias, 1m refinement, and lower-timeframe trigger sequence over a UTC date range. Choose a deterministic fixture, Alpaca crypto history, or completed 1-minute bars from the connected MT5 terminal. Replay never submits orders.</p>
     </section>
     <section class="control-card">
       <div class="control-grid">
         <div class="field"><label for="start">From UTC</label><input id="start" type="datetime-local" step="60" /></div>
         <div class="field"><label for="end">To UTC</label><input id="end" type="datetime-local" step="60" /></div>
-        <div class="field"><label for="source">Data source</label><select id="source"><option value="fixture">Deterministic fixture · offline</option><option value="alpaca">Alpaca historical · crypto 1m</option></select></div>
-        <div class="field"><label for="symbol">Pair</label><input id="symbol" value="BTC/USD" /></div>
+        <div class="field"><label for="source">Data source</label><select id="source"><option value="fixture">Deterministic fixture - offline</option><option value="alpaca">Alpaca historical - crypto 1m</option><option value="mt5">MT5 terminal - broker 1m</option></select></div>
+        <div class="field"><label for="symbol">Instrument</label><input id="symbol" value="BTC/USD" list="replay-instruments" /><datalist id="replay-instruments"><option value="BTC/USD"></option><option value="ETH/USD"></option><option value="XAUUSD"></option></datalist></div>
         <div class="field"><label for="target">Target R</label><input id="target" type="number" min="0.1" step="0.1" value="4" /></div>
         <div class="field"><label for="risk">Risk USD</label><input id="risk" type="number" min="1" step="1" value="100" /></div>
         <div class="field"><label for="be">Break-even R</label><input id="be" type="number" min="0.1" step="0.1" value="1" /></div>
@@ -151,7 +151,7 @@
       <div class="control-actions"><div class="settings">ISX sequence: 15m close-confirmed Intent → 1m S1 → 61.8–79.0% AOI → 1m S2/X. All timestamps and output dates are UTC. Alpaca ranges up to 90 days run in the background.</div><button id="run">Run replay</button></div>
       <div id="error" class="error"></div>
     </section>
-    <div class="notice"><strong>Historical mode.</strong> Authenticated Alpaca 1-minute crypto bars are replayed through the structural rules. Trigger timestamps are a 1-minute historical proxy; exact 5-second or tick fills are not reconstructed, and replay never submits orders.</div>
+    <div class="notice"><strong id="source-notice-label">Fixture mode.</strong> <span id="source-notice">BTC/USD and XAUUSD fixtures are deterministic and offline. Trigger timestamps are a 1-minute historical proxy; exact 5-second or tick fills are not reconstructed, and replay never submits orders.</span></div>
     <section class="main">
         <div class="summary" id="summary"></div>
         <div class="card analytics-card"><div class="chart-head"><h2>Quality &amp; risk metrics</h2><span id="analytics-label">Actual losses exclude 0R break-even exits</span></div><div class="analytics-grid" id="analytics-grid"><div class="empty">Run a replay to calculate streaks, expectancy, and lifecycle outcomes.</div></div></div>
@@ -288,6 +288,20 @@
         setToast("error", "Replay stopped", err.message, null, "no further updates"); $("run").disabled = false; $("run").textContent = "Run replay";
       }
     }
+    function updateSourceNotice() {
+      const source = $("source").value;
+      if (source === "mt5") {
+        $("source-notice-label").textContent = "MT5 mode.";
+        $("source-notice").textContent = "Reads completed 1-minute bars from the connected MetaTrader 5 terminal, including broker-specific XAUUSD symbols. Start the terminal and install the optional MetaTrader5 Python package before running.";
+      } else if (source === "alpaca") {
+        $("source-notice-label").textContent = "Historical mode.";
+        $("source-notice").textContent = "Reads authenticated Alpaca 1-minute crypto bars. Alpaca does not provide XAUUSD history here; choose MT5 mode for broker gold data.";
+      } else {
+        $("source-notice-label").textContent = "Fixture mode.";
+        $("source-notice").textContent = "BTC/USD and XAUUSD fixtures are deterministic and offline.";
+      }
+    }
+    $("source").addEventListener("change", updateSourceNotice); updateSourceNotice();
     $("chart-timeframe").addEventListener("change", drawTradeChart);
     $("run").addEventListener("click", async () => {
       const button = $("run"), error = $("error"); stopPolling(); activeJobId = null; error.style.display = "none"; button.disabled = true; button.textContent = "Starting…";

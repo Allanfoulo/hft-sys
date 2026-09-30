@@ -49,7 +49,8 @@ the closed candle timestamp responsible for each transition.
 
 Open `/isx-replay.html` after starting `jevloop serve` for the read-only ISX replay
 workspace. It supports UTC date ranges up to 90 days, deterministic offline
-fixtures, and Alpaca historical crypto 1-minute bars. Longer runs use the
+fixtures, Alpaca historical crypto 1-minute bars, and read-only MT5 terminal
+history. Longer runs use the
 background job progress endpoint. The replay uses the same close-confirmed
 ISX structure primitives: 15-minute Intent, 1-minute S1, the 61.8%-79.0% AOI,
 and 1-minute S2/X. Historical X is labelled `1m-trigger-proxy`; it never claims
@@ -66,6 +67,14 @@ credentials never enter the browser. Select a ledger row to load its completed
 AOI band, EX/PX/EP levels, and lifecycle levels. The per-trade chart is loaded
 on demand from the cached replay run so longer date ranges do not send every
 candle to the browser at once.
+
+For XAUUSD, choose the offline fixture to review the deterministic flow without
+external services, or choose `MT5 terminal - broker 1m` to read the broker's
+symbol and history from a connected MetaTrader 5 terminal. Install the optional
+adapter with `pip install -e '.[mt5]'` (or `uv pip install -e '.[mt5]'`) and set
+`MT5_TERMINAL_PATH` only when the terminal is not discoverable. Alpaca's source
+remains crypto-only; the replay service explains that instead of fabricating
+gold history. All three sources are read-only and replay never submits orders.
 
 ## Running continuously
 
