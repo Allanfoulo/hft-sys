@@ -140,7 +140,7 @@
         <div class="field"><label for="start">From UTC</label><input id="start" type="datetime-local" step="60" /></div>
         <div class="field"><label for="end">To UTC</label><input id="end" type="datetime-local" step="60" /></div>
         <div class="field"><label for="source">Data source</label><select id="source"><option value="fixture">Deterministic fixture - offline</option><option value="alpaca">Alpaca historical - crypto 1m</option><option value="mt5">MT5 terminal - broker 1m</option></select></div>
-        <div class="field"><label for="symbol">Instrument</label><input id="symbol" value="BTC/USD" list="replay-instruments" /><datalist id="replay-instruments"><option value="BTC/USD"></option><option value="ETH/USD"></option><option value="XAUUSD"></option></datalist></div>
+        <div class="field"><label for="symbol">Instrument</label><select id="symbol"><option value="BTC/USD" data-sources="fixture,alpaca,mt5">BTC/USD</option><option value="ETH/USD" data-sources="fixture,alpaca,mt5">ETH/USD</option><option value="XAUUSD" data-sources="fixture,mt5">XAUUSD</option><option value="__custom__">Custom broker symbol…</option></select><input id="custom-symbol" placeholder="e.g. XAUUSD.a" autocomplete="off" hidden /></div>
         <div class="field"><label for="target">Target R</label><input id="target" type="number" min="0.1" step="0.1" value="4" /></div>
         <div class="field"><label for="risk">Risk USD</label><input id="risk" type="number" min="1" step="1" value="100" /></div>
         <div class="field"><label for="be">Break-even R</label><input id="be" type="number" min="0.1" step="0.1" value="1" /></div>
@@ -288,7 +288,24 @@
         setToast("error", "Replay stopped", err.message, null, "no further updates"); $("run").disabled = false; $("run").textContent = "Run replay";
       }
     }
+    function currentSymbol() {
+      return $("symbol").value === "__custom__" ? $("custom-symbol").value.trim().toUpperCase() : $("symbol").value;
+    }
+    function updateInstrumentOptions() {
+      const source = $("source").value;
+      const options = [...$("symbol").options];
+      options.forEach((option) => {
+        if (!option.dataset.sources) return;
+        const available = option.dataset.sources.split(",").includes(source);
+        option.hidden = !available;
+        option.disabled = !available;
+      });
+      const selected = $("symbol").selectedOptions[0];
+      if (selected?.disabled) $("symbol").value = options.find((option) => !option.disabled)?.value || "__custom__";
+      $("custom-symbol").hidden = $("symbol").value !== "__custom__";
+    }
     function updateSourceNotice() {
+      updateInstrumentOptions();
       const source = $("source").value;
       if (source === "mt5") {
         $("source-notice-label").textContent = "MT5 mode.";
@@ -301,13 +318,17 @@
         $("source-notice").textContent = "BTC/USD and XAUUSD fixtures are deterministic and offline.";
       }
     }
-    $("source").addEventListener("change", updateSourceNotice); updateSourceNotice();
+    $("source").addEventListener("change", updateSourceNotice);
+    $("symbol").addEventListener("change", updateInstrumentOptions);
+    updateSourceNotice();
     $("chart-timeframe").addEventListener("change", drawTradeChart);
     $("run").addEventListener("click", async () => {
       const button = $("run"), error = $("error"); stopPolling(); activeJobId = null; error.style.display = "none"; button.disabled = true; button.textContent = "Starting…";
       latestResult = null; clearTradeChart(); setToast("running", "Replay starting", "Submitting a background job…", null, "waiting for heartbeat");
       try {
-        const payload = { source: $("source").value, symbol: $("symbol").value, start_utc: isoFromInput($("start").value), end_utc: isoFromInput($("end").value), target_r: Number($("target").value), breakeven_r: Number($("be").value), profit_lock_trigger_r: Number($("lock-trigger").value), profit_lock_r: Number($("lock-to").value), risk_usd: Number($("risk").value) };
+        const symbol = currentSymbol();
+        if (!symbol) throw new Error("Choose an instrument or enter a custom broker symbol");
+        const payload = { source: $("source").value, symbol, start_utc: isoFromInput($("start").value), end_utc: isoFromInput($("end").value), target_r: Number($("target").value), breakeven_r: Number($("be").value), profit_lock_trigger_r: Number($("lock-trigger").value), profit_lock_r: Number($("lock-to").value), risk_usd: Number($("risk").value) };
         const response = await fetch("/api/replay/jobs", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) });
         let body = null; try { body = await response.json(); } catch (_) { body = {}; }
         if (!response.ok || !body.ok || !body.job?.job_id) throw new Error(body.error || "Replay could not be started");
